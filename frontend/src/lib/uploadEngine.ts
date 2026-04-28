@@ -9,7 +9,7 @@ import { API_URL } from '@/api/client'
 
 /* ── Constants ────────────────────────────────────────────────────────── */
 const CHUNK_SIZE = 4 * 1024 * 1024 // 4 MB
-const LS_PFX = 'chttp2-mq-'
+const LS_PFX = 'imaginary-mq-'
 const MAX_RETRY = 10
 
 /* ── Types ────────────────────────────────────────────────────────────── */

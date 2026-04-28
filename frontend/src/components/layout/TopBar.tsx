@@ -27,7 +27,7 @@ export default function TopBar() {
     <header className="flex h-14 items-center justify-between border-b border-slate-200 bg-white px-5 dark:border-[#1E2640] dark:bg-[#0C0F1A]">
       <div className="flex items-center gap-3">
         <h1 className="bg-gradient-to-r from-indigo-600 to-violet-600 bg-clip-text text-lg font-extrabold tracking-tight text-transparent">
-          chttp2
+          Imaginary Storage
         </h1>
         <span className="hidden text-xs font-medium text-slate-400 sm:inline">NAS Dashboard</span>
       </div>

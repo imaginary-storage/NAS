@@ -34,7 +34,7 @@ export default function LoginPage() {
         <div className="w-[380px] shrink-0 rounded-xl border border-slate-100 bg-white p-8 shadow-[0_4px_20px_-2px_rgba(79,70,229,0.1)] transition-all duration-200 dark:border-[#1E2640] dark:bg-[#161B2E]">
           <div className="mb-8 text-center">
             <h1 className="bg-gradient-to-r from-indigo-600 to-violet-600 bg-clip-text text-2xl font-extrabold tracking-tight text-transparent">
-              chttp2
+              Imaginary Storage
             </h1>
             <p className="mt-1.5 text-sm text-slate-500">Sign in to your NAS dashboard</p>
           </div>
