@@ -5,7 +5,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
-import { FolderOpen, Download, Pencil, Copy, Trash2, Info, FolderPlus, Upload, RefreshCw, Bookmark, RotateCcw } from 'lucide-react'
+import { FolderOpen, Download, Pencil, Copy, Trash2, Info, FolderPlus, Upload, RefreshCw, Bookmark, RotateCcw, Share2 } from 'lucide-react'
 import type { FileEntry } from '@/types/api'
 
 interface FileContextMenuProps {
@@ -23,6 +23,7 @@ interface FileContextMenuProps {
   onRefresh?: () => void
   onBookmark?: () => void
   onRestore?: () => void
+  onShare?: () => void
 }
 
 export default function FileContextMenu({
@@ -40,6 +41,7 @@ export default function FileContextMenu({
   onRefresh,
   onBookmark,
   onRestore,
+  onShare,
 }: FileContextMenuProps) {
   return (
     <ContextMenu>
@@ -74,6 +76,11 @@ export default function FileContextMenu({
             {entry.type === 'dir' && onBookmark && (
               <ContextMenuItem onClick={onBookmark}>
                 <Bookmark className="mr-2 h-4 w-4" /> Add to Places
+              </ContextMenuItem>
+            )}
+            {onShare && (
+              <ContextMenuItem onClick={onShare}>
+                <Share2 className="mr-2 h-4 w-4" /> Share…
               </ContextMenuItem>
             )}
             <ContextMenuSeparator />
