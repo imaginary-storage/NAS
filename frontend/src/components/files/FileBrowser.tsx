@@ -31,10 +31,8 @@ import { Skeleton } from '@/components/ui/skeleton'
 import type { FileEntry } from '@/types/api'
 
 const TRASH_PATH = 'trash:///'
-const SHARED_PREFIX = 'shared:'
 
 import Breadcrumbs from './Breadcrumbs'
-import SharedWithMeView from '@/components/share/SharedWithMeView'
 import ShareDialog from '@/components/share/ShareDialog'
 import Toolbar from './Toolbar'
 import FileGrid from './FileGrid'
@@ -62,7 +60,6 @@ export default function FileBrowser() {
   const trashItems = useAppSelector((s) => s.trash.items)
   const user = useAppSelector((s) => s.auth.user)
   const isTrash = currentPath === TRASH_PATH
-  const isShared = currentPath.startsWith(SHARED_PREFIX)
   const [shareOpen, setShareOpen] = useState(false)
   const [shareTarget, setShareTarget] = useState<FileEntry | null>(null)
 
@@ -91,15 +88,10 @@ export default function FileBrowser() {
     dispatch(setCurrentPath(path))
     if (path === TRASH_PATH) {
       dispatch(listTrashThunk())
-    } else if (path.startsWith(SHARED_PREFIX)) {
-      // Shared view manages its own data
     } else {
       dispatch(listDirThunk(path))
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Render shared view as a self-contained subtree
-  if (isShared) return <SharedWithMeView />
 
   // Map trash items to FileEntry format when in trash mode
   const effectiveEntries = useMemo(() => {
