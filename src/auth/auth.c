@@ -289,3 +289,132 @@ int fork_and_stream(HttpRequest *req, HttpResponse *res,
   res->status = 0;
   return 0;
 }
+
+int auth_fork_exec_as_user(const char *username,
+                           char *const argv[],
+                           char *const envp[],
+                           int timeout_sec,
+                           char *out_tail, size_t tail_size,
+                           int *exit_code_out) {
+  if (exit_code_out) *exit_code_out = -1;
+  if (out_tail && tail_size > 0) out_tail[0] = '\0';
+
+  struct passwd pw_buf, *pw;
+  char pw_strbuf[1024];
+  if (getpwnam_r(username, &pw_buf, pw_strbuf, sizeof(pw_strbuf), &pw) != 0 ||
+      !pw)
+    return -1;
+
+  int outpipe[2];
+  if (pipe(outpipe) < 0) return -1;
+
+  pid_t pid = fork();
+  if (pid < 0) {
+    close(outpipe[0]);
+    close(outpipe[1]);
+    return -1;
+  }
+
+  if (pid == 0) {
+    /* Child: redirect stdout+stderr to pipe, drop privileges, exec. */
+    close(outpipe[0]);
+    if (g_server_fd >= 0) close(g_server_fd);
+
+    dup2(outpipe[1], STDOUT_FILENO);
+    dup2(outpipe[1], STDERR_FILENO);
+    close(outpipe[1]);
+
+    if (initgroups(username, pw->pw_gid) < 0) _exit(126);
+    if (setgid(pw->pw_gid) < 0)               _exit(126);
+    if (setuid(pw->pw_uid) < 0)               _exit(126);
+    if (pw->pw_uid != 0 && setuid(0) == 0)    _exit(126);
+    if (chdir(pw->pw_dir) < 0)                chdir("/tmp");
+
+    /* Use execvp so argv[0] is searched against PATH from envp (PATH must be
+     * present in envp).  Override the global `environ` pointer first because
+     * execvp looks at it.  The cast drops the parameter-level const — safe
+     * because we are in the child and about to exec. */
+    extern char **environ;
+    environ = (char **)envp;
+    execvp(argv[0], argv);
+    /* exec failed — emit a single line so the parent's tail explains it. */
+    fprintf(stderr, "execvp(%s): %s\n", argv[0], strerror(errno));
+    _exit(127);
+  }
+
+  /* Parent: drain pipe into a tail ring buffer until EOF or timeout. */
+  close(outpipe[1]);
+
+  size_t cap = (out_tail && tail_size > 1) ? tail_size - 1 : 0;
+  size_t filled = 0;
+  int wrapped = 0;
+  time_t deadline = (timeout_sec > 0) ? time(NULL) + timeout_sec : 0;
+  int timed_out = 0;
+
+  for (;;) {
+    fd_set rfds;
+    FD_ZERO(&rfds);
+    FD_SET(outpipe[0], &rfds);
+    struct timeval tv;
+    if (deadline) {
+      time_t now = time(NULL);
+      if (now >= deadline) { timed_out = 1; break; }
+      tv.tv_sec  = deadline - now;
+      tv.tv_usec = 0;
+    } else {
+      tv.tv_sec = 60; tv.tv_usec = 0;
+    }
+
+    int sel = select(outpipe[0] + 1, &rfds, NULL, NULL, &tv);
+    if (sel < 0) {
+      if (errno == EINTR) continue;
+      break;
+    }
+    if (sel == 0) continue;
+
+    char buf[4096];
+    ssize_t n = read(outpipe[0], buf, sizeof(buf));
+    if (n <= 0) break;
+
+    if (cap > 0) {
+      /* Append into ring; only the last `cap` bytes survive. */
+      for (ssize_t i = 0; i < n; i++) {
+        out_tail[filled] = buf[i];
+        filled++;
+        if (filled >= cap) { filled = 0; wrapped = 1; }
+      }
+    }
+  }
+  close(outpipe[0]);
+
+  if (timed_out) kill(pid, SIGKILL);
+
+  int wstatus = 0;
+  waitpid(pid, &wstatus, 0);
+
+  if (cap > 0) {
+    /* Linearise the ring. */
+    if (wrapped) {
+      char *tmp = malloc(cap + 1);
+      if (tmp) {
+        memcpy(tmp,            out_tail + filled, cap - filled);
+        memcpy(tmp + cap - filled, out_tail,      filled);
+        memcpy(out_tail, tmp, cap);
+        out_tail[cap] = '\0';
+        free(tmp);
+      } else {
+        out_tail[filled] = '\0';
+      }
+    } else {
+      out_tail[filled] = '\0';
+    }
+  }
+
+  if (exit_code_out) {
+    if (timed_out)                  *exit_code_out = -1;
+    else if (WIFEXITED(wstatus))    *exit_code_out = WEXITSTATUS(wstatus);
+    else if (WIFSIGNALED(wstatus))  *exit_code_out = 128 + WTERMSIG(wstatus);
+    else                            *exit_code_out = -1;
+  }
+  return 0;
+}

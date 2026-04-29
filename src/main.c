@@ -4,6 +4,7 @@
 
 #include "admin/admin.h"
 #include "auth/auth.h"
+#include "aws_sync/aws_sync.h"
 #include "fs/fs.h"
 #include "fs/trash.h"
 #include "routes/routes.h"
@@ -52,6 +53,14 @@ DEFINE_AUTH_ROUTE(handle_admin_list_disks,  handle_admin_list_disks_impl)
 DEFINE_AUTH_ROUTE(handle_admin_mount,       handle_admin_mount_impl)
 DEFINE_AUTH_ROUTE(handle_admin_unmount,     handle_admin_unmount_impl)
 DEFINE_AUTH_ROUTE(handle_admin_format,      handle_admin_format_impl)
+
+/* AWS Sync — per-user write-only archive to S3 (Glacier storage class) */
+DEFINE_AUTH_ROUTE(handle_aws_sync_get,    handle_aws_sync_get_impl)
+DEFINE_AUTH_ROUTE(handle_aws_sync_put,    handle_aws_sync_put_impl)
+DEFINE_AUTH_ROUTE(handle_aws_sync_delete, handle_aws_sync_delete_impl)
+/* /aws-sync/run is NOPRIV: it spawns a worker thread that fork-and-setuids via
+ * auth_fork_exec_as_user(), which requires root. */
+DEFINE_NOPRIV_AUTH_ROUTE(handle_aws_sync_run, handle_aws_sync_run_impl)
 
 int main(void) {
   if (getuid() != 0) {
@@ -125,6 +134,15 @@ int main(void) {
   CHTTP_POST(&srv,   "/admin/disks/mount",      handle_admin_mount);
   CHTTP_POST(&srv,   "/admin/disks/unmount",    handle_admin_unmount);
   CHTTP_POST(&srv,   "/admin/disks/format",     handle_admin_format);
+
+  /* AWS Sync */
+  CHTTP_GET(&srv,    "/aws-sync",     handle_aws_sync_get);
+  CHTTP_PUT(&srv,    "/aws-sync",     handle_aws_sync_put);
+  CHTTP_DELETE(&srv, "/aws-sync",     handle_aws_sync_delete);
+  CHTTP_POST(&srv,   "/aws-sync/run", handle_aws_sync_run);
+
+  /* Background scheduler — runs as root, forks-as-user per due config. */
+  aws_sync_scheduler_start();
 
   /* Static file server — public, no auth */
   CHTTP_STREAM_GET(&srv, "/static/*", handle_static);
