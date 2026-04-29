@@ -91,6 +91,12 @@ export function simpleUpload(dirPath: string, file: File, onProgress?: (pct: num
   })
 }
 
-export function downloadFile(path: string) {
-  window.location.href = `${API_URL}/fs/download?path=${encodeURIComponent(path)}`
+export function downloadFile(path: string, filename?: string) {
+  const a = document.createElement('a')
+  a.href = `${API_URL}/fs/download?path=${encodeURIComponent(path)}`
+  if (filename) a.download = filename
+  a.rel = 'noopener'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
 }

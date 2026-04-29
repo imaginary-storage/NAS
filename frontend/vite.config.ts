@@ -12,5 +12,19 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    proxy: {
+      '/login':    'http://localhost:8080',
+      '/logout':   'http://localhost:8080',
+      '/whoami':   'http://localhost:8080',
+      '/sessions': 'http://localhost:8080',
+      '/fs':       'http://localhost:8080',
+      '/trash':    'http://localhost:8080',
+      '/admin':    'http://localhost:8080',
+      '/static':   'http://localhost:8080',
+    },
+  },
+  build: {
+    outDir: '../www',
+    emptyOutDir: true,
   },
 })

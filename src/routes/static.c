@@ -20,21 +20,14 @@
 /* PATH_MAX minus space for "/index.html\0" so idx snprintf never truncates */
 #define FULL_PATH_MAX (PATH_MAX - 16)
 
-static const char CORS[] =
-    "Access-Control-Allow-Origin: http://localhost:8081\r\n"
-    "Access-Control-Allow-Credentials: true\r\n"
-    "Access-Control-Allow-Methods: GET, POST, PUT, DELETE, PATCH, OPTIONS\r\n"
-    "Access-Control-Allow-Headers: Content-Type, Cookie, X-Chunk-Index\r\n"
-    "Connection: close\r\n";  /* server is HTTP/1.0-style; tell browser not to reuse */
-
 static void send_error(int fd, int code, const char *text) {
     char buf[512];
     int n = snprintf(buf, sizeof(buf),
         "HTTP/1.1 %d %s\r\n"
         "Content-Length: 0\r\n"
-        "%s"
+        "Connection: close\r\n"
         "\r\n",
-        code, text, CORS);
+        code, text);
     write(fd, buf, n);
 }
 
@@ -43,9 +36,9 @@ static void send_304(int fd, const char *etag) {
     int n = snprintf(buf, sizeof(buf),
         "HTTP/1.1 304 Not Modified\r\n"
         "ETag: %s\r\n"
-        "%s"
+        "Connection: close\r\n"
         "\r\n",
-        etag, CORS);
+        etag);
     write(fd, buf, n);
 }
 
@@ -82,10 +75,25 @@ void handle_static(HttpRequest *req, HttpResponse *res) {
 
     struct stat st;
     if (stat(full_path, &st) < 0) {
-        printf("[static] 404 stat('%s'): %s\n", full_path, strerror(errno));
-        send_error(req->fd, 404, "Not Found");
-        res->status = 0;
-        return;
+        /* SPA fallback: if path has no file extension in its last segment,
+         * treat it as a client-side route and serve index.html. */
+        const char *last_slash = strrchr(rel_decoded, '/');
+        const char *last_seg = last_slash ? last_slash + 1 : rel_decoded;
+        int has_ext = strchr(last_seg, '.') != NULL;
+        if (!has_ext && strcmp(req->method, "GET") == 0) {
+            printf("[static] SPA fallback: %s -> /index.html\n", req->path);
+            snprintf(full_path, sizeof(full_path), "%s/index.html", STATIC_ROOT);
+            if (stat(full_path, &st) < 0) {
+                send_error(req->fd, 404, "Not Found");
+                res->status = 0;
+                return;
+            }
+        } else {
+            printf("[static] 404 stat('%s'): %s\n", full_path, strerror(errno));
+            send_error(req->fd, 404, "Not Found");
+            res->status = 0;
+            return;
+        }
     }
 
     /* Directory without trailing slash: redirect so relative URLs work */
@@ -96,9 +104,9 @@ void handle_static(HttpRequest *req, HttpResponse *res) {
             "HTTP/1.1 301 Moved Permanently\r\n"
             "Location: %s/\r\n"
             "Content-Length: 0\r\n"
-            "%s"
+            "Connection: close\r\n"
             "\r\n",
-            req->path, CORS);
+            req->path);
         write(req->fd, rbuf, n);
         res->status = 0;
         return;
@@ -220,9 +228,9 @@ void handle_static(HttpRequest *req, HttpResponse *res) {
                     "HTTP/1.1 416 Range Not Satisfiable\r\n"
                     "Content-Range: bytes */%lld\r\n"
                     "Content-Length: 0\r\n"
-                    "%s"
+                    "Connection: close\r\n"
                     "\r\n",
-                    (long long)st.st_size, CORS);
+                    (long long)st.st_size);
                 write(req->fd, buf, n);
                 res->status = 0;
                 return;
@@ -276,15 +284,14 @@ void handle_static(HttpRequest *req, HttpResponse *res) {
             "Last-Modified: %s\r\n"
             "Accept-Ranges: bytes\r\n"
             "Content-Range: bytes %lld-%lld/%lld\r\n"
-            "%s"
+            "Connection: close\r\n"
             "\r\n",
             status_code, status_text,
             mime,
             (long long)content_length,
             etag,
             last_modified,
-            (long long)range_start, (long long)range_end, (long long)st.st_size,
-            CORS);
+            (long long)range_start, (long long)range_end, (long long)st.st_size);
     } else {
         n = snprintf(hbuf, sizeof(hbuf),
             "HTTP/1.1 %d %s\r\n"
@@ -293,14 +300,13 @@ void handle_static(HttpRequest *req, HttpResponse *res) {
             "ETag: %s\r\n"
             "Last-Modified: %s\r\n"
             "Accept-Ranges: bytes\r\n"
-            "%s"
+            "Connection: close\r\n"
             "\r\n",
             status_code, status_text,
             mime,
             (long long)content_length,
             etag,
-            last_modified,
-            CORS);
+            last_modified);
     }
     write(req->fd, hbuf, n);
 
