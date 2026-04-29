@@ -1,0 +1,56 @@
+@import "tailwindcss";
+@import "@fontsource-variable/geist";
+
+@theme {
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+
+  --color-bg-deep:    #060812;
+  --color-bg-card:    #0f1424;
+  --color-bg-soft:    #161B2E;
+  --color-border:     #1E2640;
+  --color-muted:      #8892B0;
+
+  --color-brand-from: #6366f1;  /* indigo-500 */
+  --color-brand-to:   #a855f7;  /* purple-500 */
+  --color-accent:     #22d3ee;  /* cyan-400 */
+}
+
+html, body { background: var(--color-bg-deep); }
+body { font-family: var(--font-sans); }
+
+::selection { background: rgba(99, 102, 241, 0.3); }
+
+/* Subtle radial glow used in hero background */
+.glow-bg {
+  background:
+    radial-gradient(60% 50% at 30% 20%, rgba(99,102,241,0.18) 0%, rgba(99,102,241,0) 60%),
+    radial-gradient(50% 40% at 80% 0%,  rgba(168,85,247,0.15) 0%, rgba(168,85,247,0) 60%),
+    radial-gradient(40% 30% at 50% 90%, rgba(34,211,238,0.10) 0%, rgba(34,211,238,0)  70%);
+}
+
+/* Card edge — top-down highlight + bottom-up depth */
+.card-edge {
+  position: relative;
+  overflow: hidden;
+}
+.card-edge::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0) 30%),
+    linear-gradient(0deg, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0) 25%);
+}
+
+/* Animated gradient border for the CTA card */
+@keyframes shimmer {
+  0%, 100% { background-position: 0% 50%; }
+  50%      { background-position: 100% 50%; }
+}
+.animated-border {
+  background: linear-gradient(120deg, #6366f1 0%, #a855f7 35%, #22d3ee 70%, #6366f1 100%);
+  background-size: 200% 200%;
+  animation: shimmer 8s ease-in-out infinite;
+}
