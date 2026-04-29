@@ -35,6 +35,8 @@
 /* Misc helpers                                                            */
 /* ---------------------------------------------------------------------- */
 
+/* For NOPRIV handlers (running as root): re-derive the username from the
+ * active_session cookie since the AUTH macro doesn't pass it through. */
 static int auth_user_from_cookie(HttpRequest *req, char user_out[128]) {
   const char *cookie = chttp_header(req, "Cookie");
   char sid[65] = "", claimed[128] = "";
@@ -44,6 +46,18 @@ static int auth_user_from_cookie(HttpRequest *req, char user_out[128]) {
     user_out[0] = '\0';
     return -1;
   }
+  return 0;
+}
+
+/* For DEFINE_AUTH_ROUTE handlers (running in a fork that has already
+ * setuid'd to the authenticated user): the cookie was validated before the
+ * fork, so trust the current uid.  We can't reread ./sessions/ here — it's
+ * mode 0700 root-owned, and the forked-as-user process gets EACCES. */
+static int current_username(char user_out[128]) {
+  struct passwd *pw = getpwuid(getuid());
+  if (!pw) { user_out[0] = '\0'; return -1; }
+  strncpy(user_out, pw->pw_name, 127);
+  user_out[127] = '\0';
   return 0;
 }
 
@@ -629,24 +643,27 @@ static void list_filtered(HttpRequest *req, HttpResponse *res,
 }
 
 void handle_share_list_incoming_impl(HttpRequest *req, HttpResponse *res) {
+  (void)req;
   char user[128];
-  if (auth_user_from_cookie(req, user) < 0) {
+  if (current_username(user) < 0) {
     send_err(res, 401, "Unauthorized"); return;
   }
   list_filtered(req, res, "recipient", user);
 }
 
 void handle_share_list_outgoing_impl(HttpRequest *req, HttpResponse *res) {
+  (void)req;
   char user[128];
-  if (auth_user_from_cookie(req, user) < 0) {
+  if (current_username(user) < 0) {
     send_err(res, 401, "Unauthorized"); return;
   }
   list_filtered(req, res, "sharer", user);
 }
 
 void handle_share_list_users_impl(HttpRequest *req, HttpResponse *res) {
+  (void)req;
   char user[128];
-  if (auth_user_from_cookie(req, user) < 0) {
+  if (current_username(user) < 0) {
     send_err(res, 401, "Unauthorized"); return;
   }
   cJSON *arr = cJSON_CreateArray();
@@ -679,7 +696,7 @@ static int parse_iso_time(time_t t, char out[32]) {
 
 void handle_share_fs_list_impl(HttpRequest *req, HttpResponse *res) {
   char user[128];
-  if (auth_user_from_cookie(req, user) < 0) {
+  if (current_username(user) < 0) {
     send_err(res, 401, "Unauthorized"); return;
   }
   const char *id = chttp_path_param(req, "share_id");
@@ -749,7 +766,7 @@ void handle_share_fs_list_impl(HttpRequest *req, HttpResponse *res) {
 
 void handle_share_fs_stat_impl(HttpRequest *req, HttpResponse *res) {
   char user[128];
-  if (auth_user_from_cookie(req, user) < 0) {
+  if (current_username(user) < 0) {
     send_err(res, 401, "Unauthorized"); return;
   }
   const char *id = chttp_path_param(req, "share_id");
@@ -785,7 +802,7 @@ void handle_share_fs_stat_impl(HttpRequest *req, HttpResponse *res) {
 
 void handle_share_fs_read_impl(HttpRequest *req, HttpResponse *res) {
   char user[128];
-  if (auth_user_from_cookie(req, user) < 0) {
+  if (current_username(user) < 0) {
     send_err(res, 401, "Unauthorized"); return;
   }
   const char *id = chttp_path_param(req, "share_id");
@@ -817,7 +834,7 @@ void handle_share_fs_read_impl(HttpRequest *req, HttpResponse *res) {
 
 void handle_share_fs_write_impl(HttpRequest *req, HttpResponse *res) {
   char user[128];
-  if (auth_user_from_cookie(req, user) < 0) {
+  if (current_username(user) < 0) {
     send_err(res, 401, "Unauthorized"); return;
   }
   const char *id = chttp_path_param(req, "share_id");
@@ -843,7 +860,7 @@ void handle_share_fs_write_impl(HttpRequest *req, HttpResponse *res) {
 
 void handle_share_fs_mkdir_impl(HttpRequest *req, HttpResponse *res) {
   char user[128];
-  if (auth_user_from_cookie(req, user) < 0) {
+  if (current_username(user) < 0) {
     send_err(res, 401, "Unauthorized"); return;
   }
   const char *id = chttp_path_param(req, "share_id");
@@ -869,7 +886,7 @@ void handle_share_fs_mkdir_impl(HttpRequest *req, HttpResponse *res) {
 
 void handle_share_fs_delete_impl(HttpRequest *req, HttpResponse *res) {
   char user[128];
-  if (auth_user_from_cookie(req, user) < 0) {
+  if (current_username(user) < 0) {
     send_err(res, 401, "Unauthorized"); return;
   }
   const char *id = chttp_path_param(req, "share_id");
@@ -890,7 +907,7 @@ void handle_share_fs_delete_impl(HttpRequest *req, HttpResponse *res) {
 
 void handle_share_fs_download_impl(HttpRequest *req, HttpResponse *res) {
   char user[128];
-  if (auth_user_from_cookie(req, user) < 0) {
+  if (current_username(user) < 0) {
     send_err(res, 401, "Unauthorized"); return;
   }
   const char *id = chttp_path_param(req, "share_id");
@@ -926,7 +943,7 @@ void handle_share_fs_download_impl(HttpRequest *req, HttpResponse *res) {
 
 void handle_share_fs_upload_impl(HttpRequest *req, HttpResponse *res) {
   char user[128];
-  if (auth_user_from_cookie(req, user) < 0) {
+  if (current_username(user) < 0) {
     send_err(res, 401, "Unauthorized"); return;
   }
   const char *id = chttp_path_param(req, "share_id");
