@@ -1,5 +1,6 @@
 import { useAppSelector } from '@/store/hooks'
 import SessionList from '@/components/sessions/SessionList'
+import AwsSyncCard from '@/components/settings/AwsSyncCard'
 
 export default function SettingsPage() {
   const user = useAppSelector((s) => s.auth.user)
@@ -54,6 +55,8 @@ export default function SettingsPage() {
         <p className="mb-5 text-sm text-slate-500 dark:text-slate-400">Manage your authenticated sessions</p>
         <SessionList />
       </section>
+
+      <AwsSyncCard />
     </div>
   )
 }

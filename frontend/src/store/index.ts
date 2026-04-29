@@ -8,6 +8,7 @@ import disksReducer from './slices/disksSlice'
 import bookmarksReducer from './slices/bookmarksSlice'
 import settingsReducer from './slices/settingsSlice'
 import trashReducer from './slices/trashSlice'
+import awsSyncReducer from './slices/awsSyncSlice'
 
 export const store = configureStore({
   reducer: {
@@ -20,6 +21,7 @@ export const store = configureStore({
     bookmarks: bookmarksReducer,
     settings: settingsReducer,
     trash: trashReducer,
+    awsSync: awsSyncReducer,
   },
 })
 

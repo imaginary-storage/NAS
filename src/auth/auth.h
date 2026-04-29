@@ -38,6 +38,23 @@ int fork_and_stream(HttpRequest *req, HttpResponse *res, RouteHandler handler,
                     const char *username);
 
 /*
+ * Fork, drop privileges to `username`, exec argv[0] with argv/envp, capture
+ * the tail of the child's combined stdout+stderr (last `tail_size` bytes) and
+ * its exit status.
+ *
+ * Returns 0 on a successful spawn-and-wait (regardless of child exit code),
+ * -1 only on infrastructure failure (fork, pipe, getpwnam). Use *exit_code_out
+ * to distinguish child success vs failure. On timeout the child is SIGKILL'd
+ * and *exit_code_out is set to -1.
+ */
+int auth_fork_exec_as_user(const char *username,
+                           char *const argv[],
+                           char *const envp[],
+                           int timeout_sec,
+                           char *out_tail, size_t tail_size,
+                           int *exit_code_out);
+
+/*
  * DEFINE_AUTH_ROUTE(wrapper_name, inner_handler)
  *
  * Validates the active_session cookie (token + username cross-check), then
