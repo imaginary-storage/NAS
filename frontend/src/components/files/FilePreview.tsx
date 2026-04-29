@@ -14,14 +14,18 @@ export default function FilePreview() {
   const dispatch = useAppDispatch()
   const { previewFile, fileStat, currentPath } = useAppSelector((s) => s.fileSystem)
 
+  const isVirtual = currentPath.startsWith('shared:') || currentPath.startsWith('trash:')
+
   useEffect(() => {
-    if (!previewFile) return
+    if (!previewFile || isVirtual) return
     const fullPath = currentPath === '.' ? previewFile.name : `${currentPath}/${previewFile.name}`
     dispatch(fetchStatThunk(fullPath))
-  }, [previewFile, currentPath, dispatch])
+  }, [previewFile, currentPath, dispatch, isVirtual])
 
   const fullPath = previewFile
-    ? currentPath === '.' ? previewFile.name : `${currentPath}/${previewFile.name}`
+    ? isVirtual
+      ? previewFile.name
+      : currentPath === '.' ? previewFile.name : `${currentPath}/${previewFile.name}`
     : '-'
 
   return (

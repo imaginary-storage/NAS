@@ -123,6 +123,21 @@ export function shareDeleteFile(id: string, subpath: string) {
   )
 }
 
+export function shareUpload(id: string, subpath: string, file: File): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `${API_URL}/share/${encodeURIComponent(id)}/upload?path=${encodeURIComponent(subpath)}`)
+    xhr.withCredentials = true
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream')
+    xhr.addEventListener('load', () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve()
+      else reject(new Error(xhr.responseText || xhr.statusText))
+    })
+    xhr.addEventListener('error', () => reject(new Error('Upload failed')))
+    xhr.send(file)
+  })
+}
+
 export function shareDownload(id: string, subpath: string, filename?: string) {
   const a = document.createElement('a')
   a.href = `${API_URL}/share/${encodeURIComponent(id)}/download?path=${encodeURIComponent(subpath || '.')}`

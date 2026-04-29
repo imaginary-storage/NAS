@@ -83,17 +83,23 @@ export default function FileContextMenu({
                 <Share2 className="mr-2 h-4 w-4" /> Share…
               </ContextMenuItem>
             )}
-            <ContextMenuSeparator />
-            <ContextMenuItem onClick={onRename}>
-              <Pencil className="mr-2 h-4 w-4" /> Rename
-            </ContextMenuItem>
-            <ContextMenuItem onClick={onCopy}>
-              <Copy className="mr-2 h-4 w-4" /> Copy
-            </ContextMenuItem>
-            <ContextMenuSeparator />
-            <ContextMenuItem onClick={onDelete} className="text-destructive">
-              <Trash2 className="mr-2 h-4 w-4" /> Delete
-            </ContextMenuItem>
+            {(onRename || onCopy) && <ContextMenuSeparator />}
+            {onRename && (
+              <ContextMenuItem onClick={onRename}>
+                <Pencil className="mr-2 h-4 w-4" /> Rename
+              </ContextMenuItem>
+            )}
+            {onCopy && (
+              <ContextMenuItem onClick={onCopy}>
+                <Copy className="mr-2 h-4 w-4" /> Copy
+              </ContextMenuItem>
+            )}
+            {onDelete && <ContextMenuSeparator />}
+            {onDelete && (
+              <ContextMenuItem onClick={onDelete} className="text-destructive">
+                <Trash2 className="mr-2 h-4 w-4" /> Delete
+              </ContextMenuItem>
+            )}
             <ContextMenuSeparator />
             <ContextMenuItem onClick={onInfo}>
               <Info className="mr-2 h-4 w-4" /> Properties

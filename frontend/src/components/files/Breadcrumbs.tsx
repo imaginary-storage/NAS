@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Home, ChevronRight, Trash2, HardDrive } from 'lucide-react'
+import { Home, ChevronRight, Trash2, HardDrive, Users2 } from 'lucide-react'
 import { useAppDispatch, useAppSelector } from '@/store/hooks'
 import { listDirThunk } from '@/store/slices/fileSystemSlice'
 import { useSearchParams } from 'react-router-dom'
 
 const TRASH_PATH = 'trash:///'
+const SHARED_PATH = 'shared:///'
 
 export default function Breadcrumbs() {
   const dispatch = useAppDispatch()
@@ -94,6 +95,7 @@ export default function Breadcrumbs() {
   }, [startEditing])
 
   const isTrash = currentPath === TRASH_PATH
+  const isShared = currentPath.startsWith('shared:')
 
   const barHighlight = isRoot
     ? 'border-red-200 bg-red-50/50 dark:border-red-900/50 dark:bg-red-950/30'
@@ -107,6 +109,45 @@ export default function Breadcrumbs() {
             <Trash2 className="h-4 w-4" />
             Trash
           </span>
+        </nav>
+      </div>
+    )
+  }
+
+  if (isShared) {
+    /* shared:///                  → "Shared with me"
+     * shared:///<id>              → "Shared with me / <id-suffix>"
+     * shared:///<id>/sub/path     → "Shared with me / <id-suffix> / sub / path"
+     * (we don't know the share's display name here; FileBrowser can replace
+     * the id segment via a custom breadcrumb, but for now show the id tail). */
+    const rest = currentPath.slice(SHARED_PATH.length)
+    const parts = rest.split('/').filter(Boolean)
+    return (
+      <div className={`flex w-full items-center rounded-lg border px-1 ${barHighlight}`}>
+        <nav className="flex min-w-0 flex-1 items-center gap-1 text-sm">
+          <button
+            onClick={() => setSearchParams({ path: SHARED_PATH })}
+            className={`flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 transition-colors hover:bg-slate-100 hover:text-slate-700 ${parts.length === 0 ? 'font-semibold text-slate-900' : 'text-slate-400'}`}
+          >
+            <Users2 className="h-4 w-4" />
+            {parts.length === 0 && <span>Shared with me</span>}
+          </button>
+          {parts.map((seg, i) => {
+            const sub = parts.slice(0, i + 1).join('/')
+            const isLast = i === parts.length - 1
+            const display = i === 0 ? seg.slice(0, 8) + '…' : seg
+            return (
+              <span key={sub} className="flex items-center gap-1">
+                <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-300" />
+                <button
+                  onClick={() => setSearchParams({ path: `${SHARED_PATH}${sub}` })}
+                  className={`truncate rounded-md px-2 py-1 transition-colors ${isLast ? 'font-semibold text-slate-900' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
+                >
+                  {display}
+                </button>
+              </span>
+            )
+          })}
         </nav>
       </div>
     )
