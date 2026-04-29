@@ -23,6 +23,15 @@ import {
   deleteTrashItemThunk,
   emptyTrashThunk,
 } from '@/store/slices/trashSlice'
+import { fetchIncomingThunk } from '@/store/slices/sharesSlice'
+import {
+  shareList,
+  shareDownload,
+  shareUpload,
+  shareMkdir,
+  shareDeleteFile,
+  type Share,
+} from '@/api/share'
 import { downloadFile } from '@/api/filesystem'
 import { uploadEngine } from '@/lib/uploadEngine'
 import { addBookmarkThunk } from '@/store/slices/bookmarksSlice'
@@ -31,6 +40,21 @@ import { Skeleton } from '@/components/ui/skeleton'
 import type { FileEntry } from '@/types/api'
 
 const TRASH_PATH = 'trash:///'
+const SHARED_PATH = 'shared:///'
+
+/* shared:///         → { id: '', subpath: '' }
+ * shared:///<id>     → { id, subpath: '' }
+ * shared:///<id>/sub → { id, subpath: 'sub' }
+ * non-shared path    → null
+ */
+function parseSharedPath(p: string): { id: string; subpath: string } | null {
+  if (!p.startsWith(SHARED_PATH)) return null
+  const rest = p.slice(SHARED_PATH.length)
+  if (!rest) return { id: '', subpath: '' }
+  const slash = rest.indexOf('/')
+  if (slash === -1) return { id: rest, subpath: '' }
+  return { id: rest.slice(0, slash), subpath: rest.slice(slash + 1) }
+}
 
 import Breadcrumbs from './Breadcrumbs'
 import ShareDialog from '@/components/share/ShareDialog'
@@ -58,8 +82,39 @@ export default function FileBrowser() {
   } = useAppSelector((s) => s.fileSystem)
   const { viewMode, iconSize } = useAppSelector((s) => s.settings.values)
   const trashItems = useAppSelector((s) => s.trash.items)
+  const incomingShares = useAppSelector((s) => s.shares.incoming)
   const user = useAppSelector((s) => s.auth.user)
   const isTrash = currentPath === TRASH_PATH
+
+  /* Shared-mode parsing & capability derivation. */
+  const sharedParts = useMemo(() => parseSharedPath(currentPath), [currentPath])
+  const isShared = sharedParts !== null
+  const isSharedIndex = isShared && sharedParts.id === ''
+  const isSharedInside = isShared && sharedParts.id !== ''
+  const activeShare: Share | undefined = useMemo(
+    () => isSharedInside ? incomingShares.find((x) => x.id === sharedParts.id) : undefined,
+    [isSharedInside, sharedParts, incomingShares],
+  )
+  const sharedSubpath = sharedParts?.subpath || '.'
+  const isRwShare = activeShare?.mode === 'rw'
+
+  /* Capability flags drive UI gating (toolbar, context menu, dialogs). */
+  const caps = useMemo(() => ({
+    canShare:    !isTrash && !isShared,
+    canBookmark: !isTrash && !isSharedIndex,
+    canRename:   !isTrash && !isShared,
+    canCopy:     !isTrash && !isSharedIndex,
+    canDelete:   !isTrash && !isSharedIndex && (!isSharedInside || isRwShare),
+    canUpload:   !isTrash && !isSharedIndex && (!isSharedInside || isRwShare),
+    canMkdir:    !isTrash && !isSharedIndex && (!isSharedInside || isRwShare),
+    canPaste:    !isTrash && !isSharedIndex && (!isSharedInside || isRwShare),
+  }), [isTrash, isShared, isSharedIndex, isSharedInside, isRwShare])
+
+  /* Shared data-plane state (parallel to fileSystem store, scoped to a
+   * single share + subpath).  Refetched on share/subpath change. */
+  const [sharedEntries, setSharedEntries] = useState<FileEntry[]>([])
+  const [sharedStatus, setSharedStatus] = useState<'idle' | 'loading' | 'loaded' | 'error'>('idle')
+
   const [shareOpen, setShareOpen] = useState(false)
   const [shareTarget, setShareTarget] = useState<FileEntry | null>(null)
 
@@ -88,22 +143,77 @@ export default function FileBrowser() {
     dispatch(setCurrentPath(path))
     if (path === TRASH_PATH) {
       dispatch(listTrashThunk())
+    } else if (path.startsWith('shared:')) {
+      dispatch(fetchIncomingThunk())
     } else {
       dispatch(listDirThunk(path))
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Map trash items to FileEntry format when in trash mode
+  /* Refresh incoming list whenever we enter shared mode (covers sidebar
+   * navigation that doesn't fire the mount effect). */
+  useEffect(() => {
+    if (isShared) dispatch(fetchIncomingThunk())
+  }, [isShared, dispatch])
+
+  /* Shared-inside: fetch this share's directory contents. */
+  useEffect(() => {
+    if (!isSharedInside) return
+    setSharedStatus('loading')
+    shareList(sharedParts.id, sharedSubpath)
+      .then((r) => { setSharedEntries(r.entries); setSharedStatus('loaded') })
+      .catch((err) => {
+        setSharedStatus('error')
+        toast.error(err instanceof Error ? err.message : 'Failed to list share')
+      })
+  }, [isSharedInside, sharedParts?.id, sharedSubpath])
+
+  /* For shared-index, render each incoming share as a directory/file
+   * entry.  Maintain a parallel name→share map so click handlers can
+   * resolve back to the share record (basenames may collide between
+   * shares — disambiguate with a suffix). */
+  const sharedIndexResolved = useMemo(() => {
+    if (!isSharedIndex) return { entries: [] as FileEntry[], byName: new Map<string, Share>() }
+    const byName = new Map<string, Share>()
+    const taken = new Set<string>()
+    const out: FileEntry[] = []
+    for (const s of incomingShares) {
+      const base = s.source_path.split('/').pop() || s.source_path
+      let name = base
+      let n = 1
+      while (taken.has(name)) name = `${base} (${n++})`
+      taken.add(name)
+      byName.set(name, s)
+      out.push({
+        name,
+        type: s.kind === 'dir' ? 'dir' : 'file',
+        size: 0,
+        modified: new Date((s.expires_at || s.created_at) * 1000).toISOString(),
+        mime: s.kind === 'dir' ? 'inode/directory' : 'application/octet-stream',
+      })
+    }
+    return { entries: out, byName }
+  }, [isSharedIndex, incomingShares])
+
   const effectiveEntries = useMemo(() => {
-    if (!isTrash) return entries
-    return trashItems.map((item) => ({
+    if (isTrash) return trashItems.map((item) => ({
       name: item.name,
       type: item.type,
       size: item.size,
       modified: item.deleted_at,
       mime: '',
     }))
-  }, [isTrash, entries, trashItems])
+    if (isSharedIndex)  return sharedIndexResolved.entries
+    if (isSharedInside) return sharedEntries
+    return entries
+  }, [isTrash, isSharedIndex, isSharedInside, sharedIndexResolved, sharedEntries, entries, trashItems])
+
+  /* Effective loading status — hide skeleton in shared mode if we already
+   * have results, or use a dedicated state. */
+  const effectiveStatus = useMemo(() => {
+    if (isSharedInside) return sharedStatus
+    return status
+  }, [isSharedInside, sharedStatus, status])
 
   // Sort entries
   const sortedEntries = useMemo(() => {
@@ -149,9 +259,19 @@ export default function FileBrowser() {
     async (path: string) => {
       setSearchQuery('')
       setSearchOriginPath(null)
+      if (path === TRASH_PATH) {
+        dispatch(setCurrentPath(path))
+        dispatch(listTrashThunk())
+        setSearchParams({ path })
+        return
+      }
+      if (path.startsWith('shared:')) {
+        dispatch(setCurrentPath(path))
+        setSearchParams({ path })
+        return
+      }
       try {
         await dispatch(listDirThunk(path)).unwrap()
-        // Only update path + URL on success (fulfilled handler already set currentPath)
         setSearchParams(path === '.' ? {} : { path })
       } catch {
         // Directory listing failed — don't update path or URL
@@ -159,6 +279,15 @@ export default function FileBrowser() {
     },
     [dispatch, setSearchParams],
   )
+
+  /* Resolve an entry name → absolute filesystem path (for shared-mode FS
+   * ops that need the real source path on disk). */
+  const resolveSharedAbsolutePath = useCallback((name: string) => {
+    if (!isSharedInside || !activeShare) return null
+    const base = activeShare.source_path
+    if (sharedSubpath === '.') return `${base}/${name}`
+    return `${base}/${sharedSubpath}/${name}`
+  }, [isSharedInside, activeShare, sharedSubpath])
 
   const updateSearchQuery = useCallback(
     (value: string) => {
@@ -244,13 +373,35 @@ export default function FileBrowser() {
   const handleItemDoubleClick = useCallback(
     (entry: FileEntry) => {
       if (isTrash) return
+      if (isSharedIndex) {
+        const share = sharedIndexResolved.byName.get(entry.name)
+        if (!share) return
+        if (share.kind === 'dir') {
+          navigateTo(`${SHARED_PATH}${share.id}`)
+        } else {
+          /* File-share: download directly. */
+          shareDownload(share.id, '.', entry.name)
+        }
+        return
+      }
+      if (isSharedInside && activeShare) {
+        if (entry.type === 'dir') {
+          const newSub = sharedSubpath === '.' ? entry.name : `${sharedSubpath}/${entry.name}`
+          navigateTo(`${SHARED_PATH}${activeShare.id}/${newSub}`)
+        } else {
+          shareDownload(activeShare.id,
+            sharedSubpath === '.' ? entry.name : `${sharedSubpath}/${entry.name}`,
+            entry.name)
+        }
+        return
+      }
       if (entry.type === 'dir') {
         navigateTo(resolvePath(entry.name))
       } else {
         openFile(entry)
       }
     },
-    [isTrash, navigateTo, openFile, resolvePath],
+    [isTrash, isSharedIndex, isSharedInside, activeShare, sharedSubpath, sharedIndexResolved, navigateTo, openFile, resolvePath],
   )
 
   /* Refetch directory when any upload completes */
@@ -267,15 +418,51 @@ export default function FileBrowser() {
     return unsub
   }, [dispatch, currentPath])
 
+  const refreshSharedListing = useCallback(() => {
+    if (!isSharedInside) return
+    setSharedStatus('loading')
+    shareList(sharedParts.id, sharedSubpath)
+      .then((r) => { setSharedEntries(r.entries); setSharedStatus('loaded') })
+      .catch(() => setSharedStatus('error'))
+  }, [isSharedInside, sharedParts?.id, sharedSubpath])
+
   const handleUploadFiles = useCallback(
-    (files: FileList) => {
+    async (files: FileList) => {
+      if (isSharedInside && activeShare && isRwShare) {
+        for (const f of Array.from(files)) {
+          try {
+            const dest = sharedSubpath === '.' ? f.name : `${sharedSubpath}/${f.name}`
+            await shareUpload(activeShare.id, dest, f)
+            toast.success(`Uploaded "${f.name}"`)
+          } catch (err) {
+            toast.error(`Upload failed: ${err instanceof Error ? err.message : 'unknown'}`)
+          }
+        }
+        refreshSharedListing()
+        return
+      }
+      if (!caps.canUpload) return
       uploadEngine.addFiles(Array.from(files), currentPath)
     },
-    [currentPath],
+    [isSharedInside, activeShare, isRwShare, sharedSubpath, caps.canUpload, currentPath, refreshSharedListing],
   )
 
   const handleDelete = useCallback(
     async (names: string[]) => {
+      if (isSharedInside && activeShare && isRwShare) {
+        for (const name of names) {
+          try {
+            const sub = sharedSubpath === '.' ? name : `${sharedSubpath}/${name}`
+            await shareDeleteFile(activeShare.id, sub)
+          } catch (err) {
+            toast.error(`Failed to delete ${name}: ${err instanceof Error ? err.message : 'Unknown error'}`)
+          }
+        }
+        dispatch(clearSelection())
+        refreshSharedListing()
+        toast.success(`Deleted ${names.length} item${names.length > 1 ? 's' : ''}`)
+        return
+      }
       for (const name of names) {
         const entry = entries.find((e) => e.name === name)
         if (!entry) continue
@@ -290,7 +477,7 @@ export default function FileBrowser() {
       dispatch(clearSelection())
       toast.success(`Deleted ${names.length} item${names.length > 1 ? 's' : ''}`)
     },
-    [dispatch, entries, resolvePath],
+    [dispatch, entries, resolvePath, isSharedInside, activeShare, isRwShare, sharedSubpath, refreshSharedListing],
   )
 
   const handleTrashDelete = useCallback(
@@ -568,17 +755,20 @@ export default function FileBrowser() {
         e.preventDefault()
         dispatch(setSelectedPaths(filteredEntries.map((e) => e.name)))
       }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'c' && selectedPaths.length) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c' && selectedPaths.length && caps.canCopy) {
         e.preventDefault()
-        dispatch(setClipboard({ operation: 'copy', paths: selectedPaths.map(resolvePath) }))
+        const paths = isSharedInside
+          ? selectedPaths.map((n) => resolveSharedAbsolutePath(n) || n)
+          : selectedPaths.map(resolvePath)
+        dispatch(setClipboard({ operation: 'copy', paths }))
         toast('Copied to clipboard')
       }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'x' && selectedPaths.length) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'x' && selectedPaths.length && caps.canDelete) {
         e.preventDefault()
         dispatch(setClipboard({ operation: 'cut', paths: selectedPaths.map(resolvePath) }))
         toast('Cut to clipboard')
       }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'v' && clipboard) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v' && clipboard && caps.canPaste) {
         e.preventDefault()
         handlePaste()
       }
@@ -615,14 +805,15 @@ export default function FileBrowser() {
     openProperties,
   ])
 
-  // Drag and drop
+  // Drag and drop — only when uploads are allowed in this mode
   const handleDragOver = (e: React.DragEvent) => {
-    if (isTrash) return
+    if (!caps.canUpload) return
     e.preventDefault()
     setDragging(true)
   }
   const handleDragLeave = () => setDragging(false)
   const handleDrop = (e: React.DragEvent) => {
+    if (!caps.canUpload) return
     e.preventDefault()
     setDragging(false)
     if (e.dataTransfer.files.length) {
@@ -664,6 +855,17 @@ export default function FileBrowser() {
           }}
           onBulkDownload={() => {
             selectedPaths.forEach((name) => {
+              if (isSharedIndex) {
+                const share = sharedIndexResolved.byName.get(name)
+                if (share && share.kind === 'file') shareDownload(share.id, '.', name)
+                return
+              }
+              if (isSharedInside && activeShare) {
+                const sub = sharedSubpath === '.' ? name : `${sharedSubpath}/${name}`
+                const entry = sharedEntries.find((e) => e.name === name)
+                if (entry?.type === 'file') shareDownload(activeShare.id, sub, name)
+                return
+              }
               const entry = entries.find((e) => e.name === name)
               if (entry?.type === 'file') downloadFile(resolvePath(name), name)
             })
@@ -675,6 +877,9 @@ export default function FileBrowser() {
           trashMode={isTrash}
           onBulkRestore={() => handleRestore(selectedPaths)}
           onEmptyTrash={handleEmptyTrash}
+          canMkdir={caps.canMkdir}
+          canUpload={caps.canUpload}
+          canDelete={caps.canDelete}
         />
       </div>
 
@@ -688,7 +893,7 @@ export default function FileBrowser() {
             }
           }}
         >
-          {status === 'loading' && !entries.length ? (
+          {effectiveStatus === 'loading' && !filteredEntries.length ? (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
               {Array.from({ length: 8 }).map((_, i) => (
                 <Skeleton key={i} className="h-32 rounded-xl" />
@@ -700,10 +905,24 @@ export default function FileBrowser() {
                 <FolderOpen className="h-8 w-8 text-slate-300" />
               </div>
               <p className="text-sm font-semibold text-slate-500">
-                {searchQuery ? 'No matches found' : isTrash ? 'Trash is empty' : 'This folder is empty'}
+                {searchQuery
+                  ? 'No matches found'
+                  : isTrash
+                    ? 'Trash is empty'
+                    : isSharedIndex
+                      ? 'Nothing shared with you'
+                      : 'This folder is empty'}
               </p>
               <p className="mt-1 text-xs text-slate-400">
-                {searchQuery ? `No files or folders match "${searchQuery}"` : isTrash ? 'Deleted files will appear here' : 'Drop files here or click Upload to get started'}
+                {searchQuery
+                  ? `No files or folders match "${searchQuery}"`
+                  : isTrash
+                    ? 'Deleted files will appear here'
+                    : isSharedIndex
+                      ? 'Items others share with you appear here'
+                      : caps.canUpload
+                        ? 'Drop files here or click Upload to get started'
+                        : ''}
               </p>
             </div>
           ) : (
@@ -716,19 +935,31 @@ export default function FileBrowser() {
               }}
               onDownload={() => {
                 if (!contextEntry || contextEntry.type !== 'file') return
-                downloadFile(resolvePath(contextEntry.name), contextEntry.name)
+                if (isSharedIndex) {
+                  const share = sharedIndexResolved.byName.get(contextEntry.name)
+                  if (share) shareDownload(share.id, '.', contextEntry.name)
+                } else if (isSharedInside && activeShare) {
+                  shareDownload(activeShare.id,
+                    sharedSubpath === '.' ? contextEntry.name : `${sharedSubpath}/${contextEntry.name}`,
+                    contextEntry.name)
+                } else {
+                  downloadFile(resolvePath(contextEntry.name), contextEntry.name)
+                }
               }}
-              onRename={() => {
+              onRename={!caps.canRename ? undefined : () => {
                 if (!contextEntry) return
                 setRenameTarget(contextEntry.name)
                 setRenameOpen(true)
               }}
-              onCopy={() => {
+              onCopy={!caps.canCopy ? undefined : () => {
                 if (!contextEntry) return
-                dispatch(setClipboard({ operation: 'copy', paths: [resolvePath(contextEntry.name)] }))
+                const p = isSharedInside
+                  ? resolveSharedAbsolutePath(contextEntry.name) || contextEntry.name
+                  : resolvePath(contextEntry.name)
+                dispatch(setClipboard({ operation: 'copy', paths: [p] }))
                 toast('Copied to clipboard')
               }}
-              onDelete={() => {
+              onDelete={!caps.canDelete ? undefined : () => {
                 if (!contextEntry) return
                 setDeleteTargets([contextEntry.name])
                 setDeleteOpen(true)
@@ -741,20 +972,27 @@ export default function FileBrowser() {
                 if (!contextEntry) return
                 openProperties(contextEntry)
               }}
-              onBookmark={() => {
+              onBookmark={!caps.canBookmark ? undefined : () => {
                 if (!contextEntry || contextEntry.type !== 'dir') return
-                const fullPath = resolvePath(contextEntry.name)
+                const fullPath = isSharedInside
+                  ? (resolveSharedAbsolutePath(contextEntry.name) || resolvePath(contextEntry.name))
+                  : resolvePath(contextEntry.name)
                 dispatch(addBookmarkThunk({ path: fullPath, label: contextEntry.name }))
                 toast.success(`Bookmarked "${contextEntry.name}"`)
               }}
-              onShare={() => {
+              onShare={!caps.canShare ? undefined : () => {
                 if (!contextEntry) return
                 setShareTarget(contextEntry)
                 setShareOpen(true)
               }}
-              onNewFolder={() => setNewFolderOpen(true)}
-              onUpload={() => fileInputRef.current?.click()}
-              onRefresh={() => isTrash ? dispatch(listTrashThunk()) : dispatch(listDirThunk(currentPath))}
+              onNewFolder={!caps.canMkdir ? undefined : () => setNewFolderOpen(true)}
+              onUpload={!caps.canUpload ? undefined : () => fileInputRef.current?.click()}
+              onRefresh={() => {
+                if (isTrash) dispatch(listTrashThunk())
+                else if (isSharedIndex) dispatch(fetchIncomingThunk())
+                else if (isSharedInside) refreshSharedListing()
+                else dispatch(listDirThunk(currentPath))
+              }}
             >
               <div>
                 {viewMode === 'grid' ? (

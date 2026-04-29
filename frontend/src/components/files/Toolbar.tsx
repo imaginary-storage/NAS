@@ -24,6 +24,12 @@ interface ToolbarProps {
   trashMode?: boolean
   onBulkRestore?: () => void
   onEmptyTrash?: () => void
+  /** Hide the New Folder button (e.g. read-only shares, shared index). */
+  canMkdir?: boolean
+  /** Hide the Upload button. */
+  canUpload?: boolean
+  /** Hide the bulk-Delete button when nothing is deletable in this mode. */
+  canDelete?: boolean
 }
 
 export default function Toolbar({
@@ -38,6 +44,9 @@ export default function Toolbar({
   trashMode,
   onBulkRestore,
   onEmptyTrash,
+  canMkdir = true,
+  canUpload = true,
+  canDelete = true,
 }: ToolbarProps) {
   const dispatch = useAppDispatch()
   const { sortBy, sortOrder, selectedPaths } = useAppSelector((s) => s.fileSystem)
@@ -97,25 +106,31 @@ export default function Toolbar({
             <span className="mr-1 text-sm font-medium text-slate-500 dark:text-slate-400">
               {selectedPaths.length} selected
             </span>
-            <Button variant="ghost" size="sm" onClick={onBulkDelete} className="text-red-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10">
-              <Trash2 className="mr-1 h-4 w-4" /> Delete
-            </Button>
+            {canDelete && (
+              <Button variant="ghost" size="sm" onClick={onBulkDelete} className="text-red-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10">
+                <Trash2 className="mr-1 h-4 w-4" /> Delete
+              </Button>
+            )}
             <Button variant="ghost" size="sm" onClick={onBulkDownload} className="text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-white/10">
               <Download className="mr-1 h-4 w-4" /> Download
             </Button>
           </>
         ) : (
           <>
-            <Button variant="ghost" size="sm" onClick={onNewFolder} className="text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-slate-100">
-              <FolderPlus className="mr-1.5 h-4 w-4" /> New Folder
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => fileInputRef.current?.click()}
-              className="rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-[0_4px_14px_0_rgba(79,70,229,0.3)] transition-all duration-200 hover:-translate-y-0.5 hover:from-indigo-500 hover:to-violet-500 hover:shadow-[0_6px_20px_0_rgba(79,70,229,0.4)]"
-            >
-              <Upload className="mr-1.5 h-4 w-4" /> Upload
-            </Button>
+            {canMkdir && (
+              <Button variant="ghost" size="sm" onClick={onNewFolder} className="text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-slate-100">
+                <FolderPlus className="mr-1.5 h-4 w-4" /> New Folder
+              </Button>
+            )}
+            {canUpload && (
+              <Button
+                size="sm"
+                onClick={() => fileInputRef.current?.click()}
+                className="rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-[0_4px_14px_0_rgba(79,70,229,0.3)] transition-all duration-200 hover:-translate-y-0.5 hover:from-indigo-500 hover:to-violet-500 hover:shadow-[0_6px_20px_0_rgba(79,70,229,0.4)]"
+              >
+                <Upload className="mr-1.5 h-4 w-4" /> Upload
+              </Button>
+            )}
             <input
               ref={fileInputRef}
               type="file"
