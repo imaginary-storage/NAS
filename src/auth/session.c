@@ -140,16 +140,25 @@ int validate_session(const char *session_id, char *username_out,
   if (time(NULL) > expires_at)
     return -1;
 
-  /* Update last_access_time by rewriting the session file. */
+  /* Update last_access_time by atomically replacing the session file.
+   * In-place O_TRUNC + write races concurrent validators (the frontend fires a
+   * burst of authed requests on login / session switch) — a reader can hit the
+   * window between truncate and write, see 0 bytes, and reject the session.
+   * Write to a sibling temp path then rename(): the swap is atomic, so readers
+   * always observe either the old or new full content. */
   time_t now = time(NULL);
-  int wfd = open(filepath, O_WRONLY | O_TRUNC);
+  char tmppath[280];
+  snprintf(tmppath, sizeof(tmppath), "%s.tmp.%d", filepath, (int)getpid());
+  int wfd = open(tmppath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
   if (wfd >= 0) {
     char nbuf[512];
     int nlen = snprintf(nbuf, sizeof(nbuf),
         "id=%s\nusername=%s\ncreated_at=%ld\nexpires_at=%ld\nlast_access_time=%ld\n",
         session_id, username, (long)created_at, (long)expires_at, (long)now);
-    write(wfd, nbuf, nlen);
+    ssize_t w = write(wfd, nbuf, nlen);
     close(wfd);
+    if (w != nlen || rename(tmppath, filepath) < 0)
+      unlink(tmppath);
   }
 
   if (username_out)
