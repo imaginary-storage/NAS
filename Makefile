@@ -1,6 +1,6 @@
 CC      := gcc
 CFLAGS  := -Wall -Wextra -I src -I lib -I vendor
-LDFLAGS := -lpthread -lpam
+LDFLAGS := -lpthread -lpam -lacl
 
 SRC_DIR    := src
 LIB_DIR    := lib

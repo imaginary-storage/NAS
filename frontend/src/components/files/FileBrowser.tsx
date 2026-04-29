@@ -31,8 +31,11 @@ import { Skeleton } from '@/components/ui/skeleton'
 import type { FileEntry } from '@/types/api'
 
 const TRASH_PATH = 'trash:///'
+const SHARED_PREFIX = 'shared:'
 
 import Breadcrumbs from './Breadcrumbs'
+import SharedWithMeView from '@/components/share/SharedWithMeView'
+import ShareDialog from '@/components/share/ShareDialog'
 import Toolbar from './Toolbar'
 import FileGrid from './FileGrid'
 import FileList from './FileList'
@@ -57,7 +60,11 @@ export default function FileBrowser() {
   } = useAppSelector((s) => s.fileSystem)
   const { viewMode, iconSize } = useAppSelector((s) => s.settings.values)
   const trashItems = useAppSelector((s) => s.trash.items)
+  const user = useAppSelector((s) => s.auth.user)
   const isTrash = currentPath === TRASH_PATH
+  const isShared = currentPath.startsWith(SHARED_PREFIX)
+  const [shareOpen, setShareOpen] = useState(false)
+  const [shareTarget, setShareTarget] = useState<FileEntry | null>(null)
 
   const [newFolderOpen, setNewFolderOpen] = useState(false)
   const [renameOpen, setRenameOpen] = useState(false)
@@ -84,10 +91,15 @@ export default function FileBrowser() {
     dispatch(setCurrentPath(path))
     if (path === TRASH_PATH) {
       dispatch(listTrashThunk())
+    } else if (path.startsWith(SHARED_PREFIX)) {
+      // Shared view manages its own data
     } else {
       dispatch(listDirThunk(path))
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Render shared view as a self-contained subtree
+  if (isShared) return <SharedWithMeView />
 
   // Map trash items to FileEntry format when in trash mode
   const effectiveEntries = useMemo(() => {
@@ -743,6 +755,11 @@ export default function FileBrowser() {
                 dispatch(addBookmarkThunk({ path: fullPath, label: contextEntry.name }))
                 toast.success(`Bookmarked "${contextEntry.name}"`)
               }}
+              onShare={() => {
+                if (!contextEntry) return
+                setShareTarget(contextEntry)
+                setShareOpen(true)
+              }}
               onNewFolder={() => setNewFolderOpen(true)}
               onUpload={() => fileInputRef.current?.click()}
               onRefresh={() => isTrash ? dispatch(listTrashThunk()) : dispatch(listDirThunk(currentPath))}
@@ -838,6 +855,20 @@ export default function FileBrowser() {
           }
         }}
       />
+      {shareTarget && user && (
+        <ShareDialog
+          open={shareOpen}
+          onOpenChange={setShareOpen}
+          sourcePath={(() => {
+            const rel = resolvePath(shareTarget.name)
+            const home = user.home || '/'
+            if (rel === '.') return home
+            if (rel.startsWith('/')) return rel
+            return `${home}/${rel}`
+          })()}
+          kind={shareTarget.type === 'dir' ? 'dir' : 'file'}
+        />
+      )}
     </div>
   )
 }

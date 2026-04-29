@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useSearchParams, useLocation } from 'react-router-dom'
-import { Home, HardDrive, Trash2, FolderOpen, Star, X } from 'lucide-react'
+import { Home, HardDrive, Trash2, FolderOpen, Star, X, Users2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { useAppDispatch, useAppSelector } from '@/store/hooks'
@@ -10,6 +10,7 @@ import { listTrashThunk } from '@/store/slices/trashSlice'
 import { cn } from '@/lib/utils'
 
 const TRASH_PATH = 'trash:///'
+const SHARED_PATH = 'shared:///'
 
 function bookmarkIcon(bookmark: Bookmark) {
   const p = bookmark.path
@@ -36,6 +37,9 @@ export default function PlacesPanel() {
       dispatch(setCurrentPath(path))
       dispatch(listTrashThunk())
       setSearchParams({ path: TRASH_PATH })
+    } else if (path.startsWith('shared:')) {
+      dispatch(setCurrentPath(path))
+      setSearchParams({ path })
     } else {
       try {
         await dispatch(listDirThunk(path)).unwrap()
@@ -60,6 +64,7 @@ export default function PlacesPanel() {
   const isActive = (bookmark: { path: string }) => {
     if (location.pathname !== '/') return false
     const urlPath = searchParams.get('path') || '.'
+    if (bookmark.path === SHARED_PATH) return urlPath.startsWith('shared:')
     return bookmark.path === urlPath
   }
 
@@ -102,6 +107,20 @@ export default function PlacesPanel() {
       >
         <Trash2 className="h-[16px] w-[16px] shrink-0" />
         <span className="truncate">Trash</span>
+      </button>
+
+      {/* Shared with me — hardcoded pseudo-directory */}
+      <button
+        onClick={() => navigateTo(SHARED_PATH)}
+        className={cn(
+          'group flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-150',
+          isActive({ path: SHARED_PATH })
+            ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400'
+            : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200',
+        )}
+      >
+        <Users2 className="h-[16px] w-[16px] shrink-0" />
+        <span className="truncate">Shared with me</span>
       </button>
 
       {userBookmarks.length > 0 && (

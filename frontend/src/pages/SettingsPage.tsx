@@ -1,6 +1,7 @@
 import { useAppSelector } from '@/store/hooks'
 import SessionList from '@/components/sessions/SessionList'
 import AwsSyncCard from '@/components/settings/AwsSyncCard'
+import ManageSharesCard from '@/components/settings/ManageSharesCard'
 
 export default function SettingsPage() {
   const user = useAppSelector((s) => s.auth.user)
@@ -57,6 +58,8 @@ export default function SettingsPage() {
       </section>
 
       <AwsSyncCard />
+
+      <ManageSharesCard />
     </div>
   )
 }

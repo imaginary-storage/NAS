@@ -10,6 +10,9 @@
 #include "routes/routes.h"
 #include "routes/session_mgmt.h"
 #include "routes/static.h"
+#include "share/share.h"
+
+int share_sweeper_start(void);
 
 int g_server_fd = -1;
 
@@ -61,6 +64,23 @@ DEFINE_AUTH_ROUTE(handle_aws_sync_delete, handle_aws_sync_delete_impl)
 /* /aws-sync/run is NOPRIV: it spawns a worker thread that fork-and-setuids via
  * auth_fork_exec_as_user(), which requires root. */
 DEFINE_NOPRIV_AUTH_ROUTE(handle_aws_sync_run, handle_aws_sync_run_impl)
+
+/* File sharing.  Control-plane (create/revoke) runs as root: needs to write
+ * the registry and apply ACLs.  Read listings + data-plane ops fork as the
+ * authenticated user — the kernel ACL enforces access. */
+DEFINE_NOPRIV_AUTH_ROUTE(handle_share_create, handle_share_create_impl)
+DEFINE_NOPRIV_AUTH_ROUTE(handle_share_revoke, handle_share_revoke_impl)
+DEFINE_AUTH_ROUTE(handle_share_list_incoming, handle_share_list_incoming_impl)
+DEFINE_AUTH_ROUTE(handle_share_list_outgoing, handle_share_list_outgoing_impl)
+DEFINE_AUTH_ROUTE(handle_share_list_users,    handle_share_list_users_impl)
+DEFINE_AUTH_ROUTE(handle_share_fs_list,    handle_share_fs_list_impl)
+DEFINE_AUTH_ROUTE(handle_share_fs_stat,    handle_share_fs_stat_impl)
+DEFINE_AUTH_ROUTE(handle_share_fs_read,    handle_share_fs_read_impl)
+DEFINE_AUTH_ROUTE(handle_share_fs_write,   handle_share_fs_write_impl)
+DEFINE_AUTH_ROUTE(handle_share_fs_mkdir,   handle_share_fs_mkdir_impl)
+DEFINE_AUTH_ROUTE(handle_share_fs_delete,  handle_share_fs_delete_impl)
+DEFINE_STREAM_AUTH_ROUTE(handle_share_fs_download, handle_share_fs_download_impl)
+DEFINE_STREAM_AUTH_ROUTE(handle_share_fs_upload,   handle_share_fs_upload_impl)
 
 int main(void) {
   if (getuid() != 0) {
@@ -141,8 +161,26 @@ int main(void) {
   CHTTP_DELETE(&srv, "/aws-sync",     handle_aws_sync_delete);
   CHTTP_POST(&srv,   "/aws-sync/run", handle_aws_sync_run);
 
+  /* File sharing */
+  CHTTP_POST(&srv,        "/share",                       handle_share_create);
+  CHTTP_DELETE(&srv,      "/share/:share_id",             handle_share_revoke);
+  CHTTP_GET(&srv,         "/share/incoming",              handle_share_list_incoming);
+  CHTTP_GET(&srv,         "/share/outgoing",              handle_share_list_outgoing);
+  CHTTP_GET(&srv,         "/share/users",                 handle_share_list_users);
+  CHTTP_GET(&srv,         "/share/:share_id/list",        handle_share_fs_list);
+  CHTTP_GET(&srv,         "/share/:share_id/stat",        handle_share_fs_stat);
+  CHTTP_GET(&srv,         "/share/:share_id/content",     handle_share_fs_read);
+  CHTTP_PUT(&srv,         "/share/:share_id/content",     handle_share_fs_write);
+  CHTTP_POST(&srv,        "/share/:share_id/mkdir",       handle_share_fs_mkdir);
+  CHTTP_DELETE(&srv,      "/share/:share_id/file",        handle_share_fs_delete);
+  CHTTP_STREAM_GET(&srv,  "/share/:share_id/download",    handle_share_fs_download);
+  CHTTP_STREAM_POST(&srv, "/share/:share_id/upload",      handle_share_fs_upload);
+
   /* Background scheduler — runs as root, forks-as-user per due config. */
   aws_sync_scheduler_start();
+  if (share_init() < 0)
+    fprintf(stderr, "warning: share_init failed (registry path)\n");
+  share_sweeper_start();
 
   /* Static file server — public, no auth */
   CHTTP_STREAM_GET(&srv, "/static/*", handle_static);
