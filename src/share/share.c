@@ -184,6 +184,19 @@ static double jnum(cJSON *o, const char *k) {
 /* libacl helpers                                                          */
 /* ---------------------------------------------------------------------- */
 
+/* True iff `acl` contains a USER_OBJ entry — the proxy for "has the base
+ * three (USER_OBJ, GROUP_OBJ, OTHER) entries needed for acl_valid". */
+static int acl_has_base(acl_t acl) {
+  acl_entry_t e;
+  int rc = acl_get_entry(acl, ACL_FIRST_ENTRY, &e);
+  while (rc == 1) {
+    acl_tag_t tag;
+    if (acl_get_tag_type(e, &tag) == 0 && tag == ACL_USER_OBJ) return 1;
+    rc = acl_get_entry(acl, ACL_NEXT_ENTRY, &e);
+  }
+  return 0;
+}
+
 /* Set / overwrite the named-user ACL entry on `path` for `uid`.  `perms` is
  * the OR of the standard r/w/x bits (use S_IRUSR / S_IWUSR / S_IXUSR for
  * portability — only the bottom three matter).  `acl_type` is
@@ -192,12 +205,26 @@ static double jnum(cJSON *o, const char *k) {
 static int set_user_acl(const char *path, uid_t uid, mode_t perms,
                         acl_type_t acl_type) {
   acl_t acl = acl_get_file(path, acl_type);
+  if (!acl && errno == ENODATA && acl_type == ACL_TYPE_DEFAULT)
+    acl = acl_get_file(path, ACL_TYPE_ACCESS);
   if (!acl) {
-    if (errno == ENODATA && acl_type == ACL_TYPE_DEFAULT) {
-      /* No default ACL yet — start from the access ACL as a base. */
-      acl = acl_get_file(path, ACL_TYPE_ACCESS);
+    fprintf(stderr, "share: acl_get_file(%s, %d) failed: %s\n",
+            path, (int)acl_type, strerror(errno));
+    return -1;
+  }
+
+  /* DEFAULT ACLs are returned as an *empty* ACL (not NULL) when a directory
+   * has no default set — adding only a u:<uid> entry to that yields an
+   * acl_valid() failure (missing base USER_OBJ/GROUP_OBJ/OTHER).  Rebase
+   * from the access ACL in that case, mirroring `setfacl -d -m`. */
+  if (acl_type == ACL_TYPE_DEFAULT && !acl_has_base(acl)) {
+    acl_free(acl);
+    acl = acl_get_file(path, ACL_TYPE_ACCESS);
+    if (!acl) {
+      fprintf(stderr, "share: acl_get_file(%s, ACCESS) for default rebase "
+                      "failed: %s\n", path, strerror(errno));
+      return -1;
     }
-    if (!acl) return -1;
   }
 
   /* Find or create entry for this uid. */
@@ -214,6 +241,8 @@ static int set_user_acl(const char *path, uid_t uid, mode_t perms,
     rc = acl_get_entry(acl, ACL_NEXT_ENTRY, &entry);
   }
   if (!found && acl_create_entry(&acl, &entry) < 0) {
+    fprintf(stderr, "share: acl_create_entry(%s) failed: %s\n",
+            path, strerror(errno));
     acl_free(acl); return -1;
   }
   acl_set_tag_type(entry, ACL_USER);
@@ -227,9 +256,20 @@ static int set_user_acl(const char *path, uid_t uid, mode_t perms,
   if (perms & S_IXUSR) acl_add_perm(pset, ACL_EXECUTE);
   acl_set_permset(entry, pset);
 
-  if (acl_calc_mask(&acl) < 0) { acl_free(acl); return -1; }
-  if (acl_valid(acl) < 0) { acl_free(acl); return -1; }
+  if (acl_calc_mask(&acl) < 0) {
+    fprintf(stderr, "share: acl_calc_mask(%s) failed: %s\n",
+            path, strerror(errno));
+    acl_free(acl); return -1;
+  }
+  if (acl_valid(acl) < 0) {
+    fprintf(stderr, "share: acl_valid(%s, type=%d) failed: %s\n",
+            path, (int)acl_type, strerror(errno));
+    acl_free(acl); return -1;
+  }
   int sr = acl_set_file(path, acl_type, acl);
+  if (sr < 0)
+    fprintf(stderr, "share: acl_set_file(%s, type=%d) failed: %s\n",
+            path, (int)acl_type, strerror(errno));
   acl_free(acl);
   return sr;
 }
