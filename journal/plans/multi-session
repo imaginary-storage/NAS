@@ -32,3 +32,41 @@ frontend:
 
 - we need to show:
   - danger outline when root session is active
+
+---
+
+1. file shareing b/w users
+  - feat/file-sharing
+  - user will select a file and folder to share
+  - file will be only read only
+  - folder can be readable and writable
+  - the sharer will select:
+    - user to share with
+    - file/folder to share
+    - read/write access
+    - expiry time
+    - sharer will be able to revoke the share
+
+2. aws sync
+  - feat/aws-sync-folder
+  - user will select a folder to sync
+  - any changes made to the folder will be synced to the aws s3 and glacier storage
+  - it is a aws glacier type sync 
+  - mostly we do not need to read anything from aws s3 or glacier
+  - we will just push changes to aws s3 and glacier
+
+3. fix: unauthroized error while switching sessions - done
+4. detailed logging and error handling in backend
+
+---
+
+security:
+
+deployment:
+
+1. versioning using semver
+2. workflow for deploying new version
+3. installation/updation script 
+4. dockerization of server
+
+
