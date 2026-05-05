@@ -1,0 +1,20 @@
+we need to generate some figures based on the this project context:
+
+white background
+keep the boxes colored
+keep less details and do not bloat the diagrams
+every diagam should be in separate box
+
+
+do not implement all at once, we will go one by one
+once one is done we will move to the next one
+
+set of diagrams:
+Use case diagram 
+Data flow diagram lv0
+Date flow diagram lv1
+System architecture diagram 
+Module design diagram 
+Flow chart diagram 
+Activity diagram 
+Class diagram
