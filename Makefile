@@ -1,5 +1,13 @@
 CC      := gcc
-CFLAGS  := -Wall -Wextra -I src -I lib -I vendor
+
+VERSION := $(shell cat VERSION 2>/dev/null || echo 0.0.0)
+GIT_SHA := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+BUILD_AT := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+
+CFLAGS  := -Wall -Wextra -I src -I lib -I vendor \
+           -DIMAGINARY_VERSION=\"$(VERSION)\" \
+           -DIMAGINARY_GIT_SHA=\"$(GIT_SHA)\" \
+           -DIMAGINARY_BUILD_AT=\"$(BUILD_AT)\"
 LDFLAGS := -lpthread -lpam -lacl
 
 SRC_DIR    := src

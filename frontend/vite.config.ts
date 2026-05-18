@@ -2,9 +2,17 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
+import fs from 'fs'
+
+const version = fs
+  .readFileSync(path.resolve(__dirname, '../VERSION'), 'utf-8')
+  .trim()
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  define: {
+    __APP_VERSION__: JSON.stringify(version),
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
@@ -21,6 +29,7 @@ export default defineConfig({
       '/trash':    'http://localhost:8080',
       '/admin':    'http://localhost:8080',
       '/static':   'http://localhost:8080',
+      '/version':  'http://localhost:8080',
     },
   },
   build: {

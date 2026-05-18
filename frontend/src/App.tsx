@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { useAppDispatch, useAppSelector } from '@/store/hooks'
 import { whoamiThunk, clearAuth } from '@/store/slices/authSlice'
+import { useVersionCheck } from '@/lib/versionCheck'
 
 import AppShell from '@/components/layout/AppShell'
 import LoginPage from '@/pages/LoginPage'
@@ -48,6 +49,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
+  useVersionCheck()
   return (
     <BrowserRouter>
       <Routes>

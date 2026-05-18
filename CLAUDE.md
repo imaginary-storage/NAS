@@ -2,6 +2,15 @@
 
 Self-hosted NAS file manager with a C HTTP server backend (the `chttp` framework) and React frontend.
 
+## Versioning
+
+`VERSION` at the repo root is the **single source of truth** (semver, e.g. `0.1.0`).
+
+- Backend: Makefile reads `VERSION` and passes `-DIMAGINARY_VERSION`, `-DIMAGINARY_GIT_SHA`, `-DIMAGINARY_BUILD_AT` at compile time. Exposed via `GET /version` (unauthenticated).
+- Frontend: `vite.config.ts` reads `../VERSION` and exposes it as the global `__APP_VERSION__`. Shown in the sidebar footer. On boot, the app fetches `/version` and toasts a reload prompt if it mismatches.
+
+Bumping `VERSION` is enough — both sides pick it up on next build.
+
 ## Build & Run
 
 ```bash

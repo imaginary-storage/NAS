@@ -10,6 +10,7 @@
 #include "routes/routes.h"
 #include "routes/session_mgmt.h"
 #include "routes/static.h"
+#include "routes/version.h"
 #include "share/share.h"
 
 int share_sweeper_start(void);
@@ -109,6 +110,9 @@ int main(void) {
   //CHTTP_SSE(&srv, "/sse", handle_sse);
   //CHTTP_GET(&srv, "/fdownload/:filename", handle_download);
   //CHTTP_GET(&srv, "/fmetadata/:filename", handle_fmetadata);
+
+  /* Public — version metadata (used by frontend to detect upgrades) */
+  CHTTP_GET(&srv,    "/version",                        handle_version);
 
   /* Authenticated — runs handler in a forked child under user privileges */
   CHTTP_POST(&srv,   "/login",                          handle_login);

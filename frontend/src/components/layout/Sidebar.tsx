@@ -136,6 +136,9 @@ export default function Sidebar() {
             {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </button>
         </div>
+        <div className="mt-2 text-[10px] tracking-wider text-slate-400 dark:text-slate-500">
+          v{__APP_VERSION__}
+        </div>
       </div>
     </aside>
   )
