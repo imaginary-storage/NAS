@@ -1,0 +1,167 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  # Sanity: the pushed tag must match the VERSION file in that commit.
+  verify:
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: read
+        name: Read VERSION and check it matches the tag
+        run: |
+          version=$(cat VERSION | tr -d '[:space:]')
+          tag="${GITHUB_REF_NAME}"
+          if [ "v${version}" != "${tag}" ]; then
+            echo "::error::tag ${tag} does not match VERSION (v${version})"
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+  build-server:
+    needs: verify
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            arch: x86_64
+          - runner: ubuntu-22.04-arm
+            arch: aarch64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential libpam0g-dev libacl1-dev
+
+      - name: Build
+        run: |
+          make VERSION="${{ needs.verify.outputs.version }}" \
+               GIT_SHA="$(git rev-parse --short HEAD)"
+          strip dist/server
+
+      - name: Upload server artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-${{ matrix.arch }}
+          path: dist/server
+          retention-days: 1
+
+  build-frontend:
+    needs: verify
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npx vite build
+
+      - name: Upload web artifact
+        uses: actions/upload-artifact@v4
+        with:
+          # Vite outputs to ../www
+          name: frontend-web
+          path: www
+          retention-days: 1
+
+  package:
+    needs: [verify, build-server, build-frontend]
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        arch: [x86_64, aarch64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download server binary
+        uses: actions/download-artifact@v4
+        with:
+          name: server-${{ matrix.arch }}
+          path: artifacts/server
+
+      - name: Download web bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-web
+          path: artifacts/web
+
+      - name: Stage tarball
+        run: |
+          version="${{ needs.verify.outputs.version }}"
+          stage="imaginary-storage-v${version}"
+          mkdir -p "${stage}"/{bin,web,etc}
+
+          install -m 0755 artifacts/server/server      "${stage}/bin/server"
+          cp -r artifacts/web/.                         "${stage}/web/"
+          cp etc/imaginary-storage.service              "${stage}/etc/"
+          cp VERSION                                    "${stage}/"
+          cp etc/RELEASE_README.md                      "${stage}/README.md"
+
+          # install.sh / uninstall.sh land with Phase 5 — bundle if present.
+          [ -f install.sh ]   && install -m 0755 install.sh   "${stage}/install.sh"   || true
+          [ -f uninstall.sh ] && install -m 0755 uninstall.sh "${stage}/uninstall.sh" || true
+
+          tarball="imaginary-storage-v${version}-linux-${{ matrix.arch }}.tar.gz"
+          tar -czf "${tarball}" "${stage}"
+          sha256sum "${tarball}" > "${tarball}.sha256"
+
+          echo "TARBALL=${tarball}" >> "$GITHUB_ENV"
+
+      - name: Upload tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: tarball-${{ matrix.arch }}
+          path: |
+            imaginary-storage-v*-linux-${{ matrix.arch }}.tar.gz
+            imaginary-storage-v*-linux-${{ matrix.arch }}.tar.gz.sha256
+          retention-days: 1
+
+  release:
+    needs: [verify, package]
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Download all tarballs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: tarball-*
+          merge-multiple: true
+
+      - name: Combine SHA256SUMS
+        run: |
+          version="${{ needs.verify.outputs.version }}"
+          out="imaginary-storage-v${version}-SHA256SUMS"
+          cat ./*.tar.gz.sha256 > "${out}"
+          rm -f ./*.tar.gz.sha256
+          echo "Combined sums:"
+          cat "${out}"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            imaginary-storage-v*-linux-x86_64.tar.gz
+            imaginary-storage-v*-linux-aarch64.tar.gz
+            imaginary-storage-v*-SHA256SUMS

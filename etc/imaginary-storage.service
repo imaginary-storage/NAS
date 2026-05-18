@@ -1,0 +1,29 @@
+[Unit]
+Description=Imaginary Storage NAS
+Documentation=https://github.com/Jhaempyre/imaginary-storage-nas
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+EnvironmentFile=-/etc/imaginary-storage/config.env
+ExecStart=/opt/imaginary-storage/bin/server
+WorkingDirectory=/opt/imaginary-storage
+Restart=on-failure
+RestartSec=2s
+TimeoutStopSec=30s
+KillSignal=SIGTERM
+StandardOutput=journal
+StandardError=journal
+
+# Lightweight hardening compatible with the fork+setuid model.
+# We CANNOT use NoNewPrivileges (breaks setuid), ProtectHome (we read
+# user home dirs), or PrivateUsers (breaks setuid).
+ProtectSystem=full
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+
+[Install]
+WantedBy=multi-user.target
