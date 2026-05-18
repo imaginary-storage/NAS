@@ -36,7 +36,7 @@ int create_session(const char *username, char session_id_out[65]) {
   time_t expires = now + SESSION_EXPIRY_SEC;
 
   char filepath[256];
-  snprintf(filepath, sizeof(filepath), "%s/session_%s", SESSION_DIR, id);
+  snprintf(filepath, sizeof(filepath), "%s/session_%s", g_session_dir, id);
 
   int fd = open(filepath, O_WRONLY | O_CREAT | O_EXCL, 0644);
   if (fd < 0) {
@@ -106,7 +106,7 @@ int validate_session(const char *session_id, char *username_out,
       return -1;
   }
   char filepath[256];
-  snprintf(filepath, sizeof(filepath), "%s/session_%s", SESSION_DIR, session_id);
+  snprintf(filepath, sizeof(filepath), "%s/session_%s", g_session_dir, session_id);
 
   int fd = open(filepath, O_RDONLY);
   if (fd < 0)
@@ -172,7 +172,7 @@ int read_session_info(const char *session_id, SessionInfo *info_out) {
       return -1;
   }
   char filepath[256];
-  snprintf(filepath, sizeof(filepath), "%s/session_%s", SESSION_DIR, session_id);
+  snprintf(filepath, sizeof(filepath), "%s/session_%s", g_session_dir, session_id);
 
   int fd = open(filepath, O_RDONLY);
   if (fd < 0)
@@ -215,7 +215,7 @@ int delete_session_file(const char *session_id) {
       return -1;
   }
   char filepath[256];
-  snprintf(filepath, sizeof(filepath), "%s/session_%s", SESSION_DIR, session_id);
+  snprintf(filepath, sizeof(filepath), "%s/session_%s", g_session_dir, session_id);
   return unlink(filepath);
 }
 

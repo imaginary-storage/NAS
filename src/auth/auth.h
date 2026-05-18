@@ -3,7 +3,11 @@
 #include <time.h>
 #include "chttp.h"
 
-#define SESSION_DIR           "./sessions"
+/* Session storage directory. Set at startup from $IMAGINARY_DATA_DIR
+ * (defaults to "./sessions" for dev, "/var/lib/imaginary-storage/sessions"
+ * under the systemd service). */
+extern const char *g_session_dir;
+
 #define SESSION_ID_BYTES       32
 #define SESSION_EXPIRY_SEC    (24 * 3600)
 #define FORK_HANDLER_TIMEOUT_SEC  30

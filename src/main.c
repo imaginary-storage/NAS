@@ -1,5 +1,11 @@
+#include <errno.h>
+#include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 #include "admin/admin.h"
@@ -16,6 +22,46 @@
 int share_sweeper_start(void);
 
 int g_server_fd = -1;
+
+/* Runtime configuration, populated from environment in main(). */
+const char *g_session_dir = "./sessions";
+const char *g_web_root    = "www";
+volatile sig_atomic_t g_shutting_down = 0;
+
+static char g_session_dir_buf[512];
+
+static const char *getenv_or(const char *name, const char *fallback) {
+  const char *v = getenv(name);
+  return (v && *v) ? v : fallback;
+}
+
+/* mkdir -p for a single absolute path. Best-effort; logs but doesn't abort. */
+static void mkdir_p(const char *path, mode_t mode) {
+  char tmp[512];
+  size_t n = strlen(path);
+  if (n == 0 || n >= sizeof(tmp)) return;
+  memcpy(tmp, path, n + 1);
+  if (tmp[n - 1] == '/') tmp[n - 1] = '\0';
+  for (char *p = tmp + 1; *p; p++) {
+    if (*p == '/') {
+      *p = '\0';
+      if (mkdir(tmp, mode) < 0 && errno != EEXIST) {
+        fprintf(stderr, "warn: mkdir(%s) failed\n", tmp);
+      }
+      *p = '/';
+    }
+  }
+  if (mkdir(tmp, mode) < 0 && errno != EEXIST) {
+    fprintf(stderr, "warn: mkdir(%s) failed\n", tmp);
+  }
+}
+
+static void on_term(int signo) {
+  (void)signo;
+  g_shutting_down = 1;
+  /* Wake the accept() in chttp_server_run so the loop exits. */
+  if (g_server_fd >= 0) shutdown(g_server_fd, SHUT_RDWR);
+}
 
 /* Auth wrappers — each generates a static RouteHandler that validates the
  * active_session cookie then calls fork_and_run() with the _impl function. */
@@ -89,11 +135,42 @@ int main(void) {
     return 1;
   }
 
-  mkdir(SESSION_DIR, 0700);
+  /* Configuration from environment. Defaults are dev-friendly. */
+  const char *data_dir = getenv_or("IMAGINARY_DATA_DIR", ".");
+  g_web_root           = getenv_or("IMAGINARY_WEB_ROOT", "www");
+
+  int port = 8080;
+  const char *port_env = getenv("IMAGINARY_PORT");
+  if (port_env && *port_env) {
+    int p = atoi(port_env);
+    if (p > 0 && p < 65536) port = p;
+    else fprintf(stderr, "warn: IMAGINARY_PORT='%s' invalid, using 8080\n", port_env);
+  }
+
+  /* Compose ${data_dir}/sessions for the session store. */
+  snprintf(g_session_dir_buf, sizeof(g_session_dir_buf), "%s/sessions", data_dir);
+  g_session_dir = g_session_dir_buf;
+
+  /* Bootstrap data dirs. mkdir_p is safe-if-exists. */
+  mkdir_p(data_dir, 0755);
+  mkdir(g_session_dir, 0700);
+
+  fprintf(stderr,
+          "imaginary-storage starting: port=%d data_dir=%s web_root=%s\n",
+          port, data_dir, g_web_root);
+
+  /* Graceful shutdown on SIGTERM/SIGINT; ignore SIGPIPE. */
+  struct sigaction sa = {0};
+  sa.sa_handler = on_term;
+  sigemptyset(&sa.sa_mask);
+  sa.sa_flags = 0;
+  sigaction(SIGTERM, &sa, NULL);
+  sigaction(SIGINT,  &sa, NULL);
+  signal(SIGPIPE, SIG_IGN);
 
   HttpServer srv;
 
-  if (chttp_server_init(&srv, 8080) < 0)
+  if (chttp_server_init(&srv, port) < 0)
     return 1;
 
   /* Expose the listening fd so forked children can close it. */
@@ -113,6 +190,7 @@ int main(void) {
 
   /* Public — version metadata (used by frontend to detect upgrades) */
   CHTTP_GET(&srv,    "/version",                        handle_version);
+  CHTTP_GET(&srv,    "/healthz",                        handle_healthz);
 
   /* Authenticated — runs handler in a forked child under user privileges */
   CHTTP_POST(&srv,   "/login",                          handle_login);

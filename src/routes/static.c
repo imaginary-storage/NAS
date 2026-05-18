@@ -13,7 +13,9 @@
 #include "chttp.h"
 #include "utils/utils.h"
 
-#define STATIC_ROOT "www"
+/* Set at startup from $IMAGINARY_WEB_ROOT. Defaults to "www" for dev,
+ * "/opt/imaginary-storage/web" under the installed service. */
+extern const char *g_web_root;
 
 /* Limit decoded relative path so full_path + "/index.html" always fits in PATH_MAX */
 #define REL_PATH_MAX  2048
@@ -71,7 +73,7 @@ void handle_static(HttpRequest *req, HttpResponse *res) {
 
     /* Build full path — at most strlen("www/") + REL_PATH_MAX - 1 < FULL_PATH_MAX */
     char full_path[FULL_PATH_MAX];
-    snprintf(full_path, sizeof(full_path), "%s/%s", STATIC_ROOT, rel_decoded);
+    snprintf(full_path, sizeof(full_path), "%s/%s", g_web_root, rel_decoded);
 
     struct stat st;
     if (stat(full_path, &st) < 0) {
@@ -82,7 +84,7 @@ void handle_static(HttpRequest *req, HttpResponse *res) {
         int has_ext = strchr(last_seg, '.') != NULL;
         if (!has_ext && strcmp(req->method, "GET") == 0) {
             printf("[static] SPA fallback: %s -> /index.html\n", req->path);
-            snprintf(full_path, sizeof(full_path), "%s/index.html", STATIC_ROOT);
+            snprintf(full_path, sizeof(full_path), "%s/index.html", g_web_root);
             if (stat(full_path, &st) < 0) {
                 send_error(req->fd, 404, "Not Found");
                 res->status = 0;
@@ -143,9 +145,9 @@ void handle_static(HttpRequest *req, HttpResponse *res) {
 
     /* realpath check: prevent symlink escape outside www/ */
     char root_rp[PATH_MAX], file_rp[PATH_MAX];
-    if (!realpath(STATIC_ROOT, root_rp) || !realpath(full_path, file_rp)) {
+    if (!realpath(g_web_root, root_rp) || !realpath(full_path, file_rp)) {
         printf("[static] 404 realpath failed: root='%s' file='%s': %s\n",
-               STATIC_ROOT, full_path, strerror(errno));
+               g_web_root, full_path, strerror(errno));
         send_error(req->fd, 404, "Not Found");
         res->status = 0;
         return;

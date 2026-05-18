@@ -20,3 +20,8 @@ void handle_version(HttpRequest *req, HttpResponse *res) {
   cJSON_AddStringToObject(obj, "built_at", IMAGINARY_BUILD_AT);
   chttp_send_cjson(res, obj);
 }
+
+void handle_healthz(HttpRequest *req, HttpResponse *res) {
+  (void)req;
+  chttp_send_text(res, "ok");
+}

@@ -3,6 +3,7 @@
 
 #include <arpa/inet.h>
 #include <ctype.h>
+#include <errno.h>
 #include <pthread.h>
 #include <signal.h>
 #include <stdint.h>
@@ -744,11 +745,19 @@ int chttp_server_init(HttpServer *srv, int port) {
     return 0;
 }
 
+/* Set non-zero by main.c's SIGTERM/SIGINT handler. */
+extern volatile sig_atomic_t g_shutting_down;
+
 void chttp_server_run(HttpServer *srv) {
     printf("Listening on port %d\n", srv->port);
-    while (1) {
+    while (!g_shutting_down) {
         int client_fd = accept(srv->server_fd, NULL, NULL);
-        if (client_fd < 0) { perror("accept"); continue; }
+        if (client_fd < 0) {
+            if (g_shutting_down) break;
+            if (errno == EINTR) continue;
+            perror("accept");
+            continue;
+        }
 
         ConnectionArgs *ca = malloc(sizeof(*ca));
         if (!ca) { close(client_fd); continue; }
@@ -759,6 +768,7 @@ void chttp_server_run(HttpServer *srv) {
         pthread_create(&tid, NULL, connection_thread, ca);
         pthread_detach(tid);
     }
+    printf("Shutting down accept loop.\n");
 }
 
 void chttp_server_destroy(HttpServer *srv) {
