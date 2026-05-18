@@ -11,6 +11,18 @@ Self-hosted NAS file manager with a C HTTP server backend (the `chttp` framework
 
 Bumping `VERSION` is enough — both sides pick it up on next build.
 
+## Releases
+
+Tags use `v<semver>` (e.g. `v0.1.0`) and trigger the GitHub Actions release workflow. The release flow is two steps:
+
+```bash
+scripts/bump.sh patch                          # edits VERSION (Phase 4 — not yet)
+git commit -am "chore: release v$(cat VERSION)"
+scripts/release.sh                             # tags + pushes, CI publishes the release
+```
+
+`scripts/release.sh` refuses to run on a dirty tree, off `main` (override with `--allow-branch`), or if the tag already exists locally or on `origin`. Pass `--yes` to skip the confirmation prompt.
+
 ## Build & Run
 
 ```bash
