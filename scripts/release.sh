@@ -73,7 +73,7 @@ RANGE=${RANGE:-HEAD}
 
 info "Releasing ${C_BOLD}$TAG${C_RESET} from branch ${C_BOLD}$BRANCH${C_RESET}"
 printf '\n%sCommits since %s:%s\n' "$C_BOLD" "${LAST_TAG:-the beginning}" "$C_RESET"
-git log --pretty=format:'  %h %s' "$RANGE" | head -20
+git log -n 20 --pretty=format:'  %h %s' "$RANGE"
 printf '\n\n'
 
 if [ "$ASSUME_YES" -ne 1 ]; then
