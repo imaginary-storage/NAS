@@ -101,7 +101,12 @@ elif command -v dnf     >/dev/null; then PKG_MANAGER=dnf;    PKG_INSTALL_HINT="d
 elif command -v pacman  >/dev/null; then PKG_MANAGER=pacman; PKG_INSTALL_HINT="pacman -S --needed pam acl ca-certificates"
 fi
 
-check_lib() { ldconfig -p 2>/dev/null | grep -q "$1"; }
+check_lib() {
+  ldconfig -p 2>/dev/null | grep -q "$1" && return 0
+  # fallback: direct search if ldconfig cache is stale/empty
+  find /lib /lib64 /usr/lib /usr/lib64 /usr/local/lib \
+       -maxdepth 3 -name "${1}*" 2>/dev/null | grep -q .
+}
 need_libs=()
 check_lib libpam.so || need_libs+=("libpam")
 check_lib libacl.so || need_libs+=("libacl")
