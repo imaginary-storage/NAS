@@ -6,7 +6,7 @@ systemd keeps it running.
 ## Quick install
 
 ```bash
-curl -fsSL https://github.com/Jhaempyre/imaginary-storage-nas/releases/latest/download/install.sh \
+curl -fsSL https://github.com/imaginary-storage/imaginary-storage-nas/releases/latest/download/install.sh \
   | sudo bash
 ```
 
@@ -30,8 +30,8 @@ If you'd rather not pipe `curl` into `bash`:
 ```bash
 TAG=v0.1.0 ARCH=$(uname -m)
 [ "$ARCH" = arm64 ] && ARCH=aarch64
-curl -fsSLO "https://github.com/Jhaempyre/imaginary-storage-nas/releases/download/${TAG}/imaginary-storage-${TAG}-linux-${ARCH}.tar.gz"
-curl -fsSLO "https://github.com/Jhaempyre/imaginary-storage-nas/releases/download/${TAG}/imaginary-storage-${TAG}-SHA256SUMS"
+curl -fsSLO "https://github.com/imaginary-storage/imaginary-storage-nas/releases/download/${TAG}/imaginary-storage-${TAG}-linux-${ARCH}.tar.gz"
+curl -fsSLO "https://github.com/imaginary-storage/imaginary-storage-nas/releases/download/${TAG}/imaginary-storage-${TAG}-SHA256SUMS"
 sha256sum -c imaginary-storage-${TAG}-SHA256SUMS
 tar -xzf imaginary-storage-${TAG}-linux-${ARCH}.tar.gz
 sudo ./imaginary-storage-${TAG}/install.sh
@@ -138,7 +138,7 @@ service, swaps files, and starts again. Your `config.env` and
 `/var/lib/imaginary-storage/` are untouched.
 
 ```bash
-curl -fsSL https://github.com/Jhaempyre/imaginary-storage-nas/releases/latest/download/install.sh | sudo bash
+curl -fsSL https://github.com/imaginary-storage/imaginary-storage-nas/releases/latest/download/install.sh | sudo bash
 ```
 
 To pin a specific version:
