@@ -5,7 +5,7 @@
 # Two ways to run it:
 #
 #   # Remote (curl-pipe-bash):
-#   curl -fsSL install.imaginarystorage.com | sudo bash
+#   curl -fsSL nas.imaginarystorage.com/install.sh | sudo bash
 #
 #   # From an extracted release tarball:
 #   sudo ./install.sh

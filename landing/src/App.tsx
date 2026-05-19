@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { HardDrive, Check, Copy } from 'lucide-react'
 
 const REPO_URL = 'https://github.com/imaginary-storage/NAS'
-const INSTALL_CMD = 'curl -fsSL install.imaginarystorage.com | sudo bash'
+const INSTALL_CMD = 'curl -fsSL nas.imaginarystorage.com/install.sh | sudo bash'
 
 /* Lucide v1 dropped brand icons; inlining the GitHub mark to keep the
  * marketing site's brand-link consistent. */

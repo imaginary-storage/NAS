@@ -1,7 +1,14 @@
-# `install.imaginarystorage.com` — Cloudflare Worker
+# `install.imaginarystorage.com` — Cloudflare Worker (parked)
+
+> **Status: not in active use.** The DNS for `imaginarystorage.com` is on
+> Hostinger, not Cloudflare. Cloudflare Workers can't bind a zone route
+> without the zone living on Cloudflare, so this Worker is dormant until
+> DNS moves. The active install URL today is
+> `https://nas.imaginarystorage.com/install.sh` — served as a static asset
+> from `landing/public/install.sh` via the existing GitHub Pages site.
 
 Tiny Worker that proxies the latest `install.sh` from the GitHub Release of
-`imaginary-storage/NAS`. End users do:
+`imaginary-storage/NAS`. End users would do:
 
 ```bash
 curl -fsSL install.imaginarystorage.com | sudo bash
