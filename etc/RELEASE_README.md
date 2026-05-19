@@ -34,7 +34,7 @@ Default URL after install: `http://<host>:8080`.
 ## Remote one-liner
 
 ```bash
-curl -fsSL https://github.com/imaginary-storage/imaginary-storage-nas/releases/latest/download/install.sh | sudo bash
+curl -fsSL https://github.com/imaginary-storage/NAS/releases/latest/download/install.sh | sudo bash
 ```
 
 ## Service control
@@ -63,4 +63,4 @@ trash) is **never** removed by the uninstaller — users own their data.
 
 ## Source
 
-https://github.com/imaginary-storage/imaginary-storage-nas
+https://github.com/imaginary-storage/NAS

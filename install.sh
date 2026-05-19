@@ -5,7 +5,7 @@
 # Two ways to run it:
 #
 #   # Remote (curl-pipe-bash):
-#   curl -fsSL https://github.com/imaginary-storage/imaginary-storage-nas/releases/latest/download/install.sh \
+#   curl -fsSL https://github.com/imaginary-storage/NAS/releases/latest/download/install.sh \
 #     | sudo bash
 #
 #   # From an extracted release tarball:
@@ -29,7 +29,7 @@ set -euo pipefail
 
 # ---- repo (used to build download URLs) ---------------------------------
 REPO_OWNER="imaginary-storage"
-REPO_NAME="imaginary-storage-nas"
+REPO_NAME="NAS"
 REPO_URL="https://github.com/${REPO_OWNER}/${REPO_NAME}"
 API_URL="https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}"
 

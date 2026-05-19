@@ -56,7 +56,19 @@ frontend:
   - we will just push changes to aws s3 and glacier
 
 3. fix: unauthroized error while switching sessions - done
+
+---
+
 4. detailed logging and error handling in backend
+  - feat/logging-and-error-handling
+  - we need to log all the actions and errors in the backend
+  - admin can see the application logs in ui
+    - for admins there will be a saperate page to view the logs
+    - user's cant view the logs
+    - need some server sided event to get the logs
+  - bascially we need terminal based setup in ui:
+    - we then can use this to show read only logs
+    - read and write based shell access
 
 ---
 

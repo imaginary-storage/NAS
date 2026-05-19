@@ -1,6 +1,6 @@
 [Unit]
 Description=Imaginary Storage NAS
-Documentation=https://github.com/imaginary-storage/imaginary-storage-nas
+Documentation=https://github.com/imaginary-storage/NAS
 After=network-online.target
 Wants=network-online.target
 
