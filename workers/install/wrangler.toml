@@ -1,0 +1,9 @@
+name = "imaginary-install"
+main = "src/index.js"
+compatibility_date = "2025-09-01"
+
+# Bind the worker to install.imaginarystorage.com (zone-level route).
+# Replace the `zone_name` if the domain ever moves.
+routes = [
+  { pattern = "install.imaginarystorage.com/*", zone_name = "imaginarystorage.com" },
+]

@@ -34,7 +34,7 @@ Default URL after install: `http://<host>:8080`.
 ## Remote one-liner
 
 ```bash
-curl -fsSL https://github.com/imaginary-storage/NAS/releases/latest/download/install.sh | sudo bash
+curl -fsSL install.imaginarystorage.com | sudo bash
 ```
 
 ## Service control

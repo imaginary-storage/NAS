@@ -5,8 +5,7 @@
 # Two ways to run it:
 #
 #   # Remote (curl-pipe-bash):
-#   curl -fsSL https://github.com/imaginary-storage/NAS/releases/latest/download/install.sh \
-#     | sudo bash
+#   curl -fsSL install.imaginarystorage.com | sudo bash
 #
 #   # From an extracted release tarball:
 #   sudo ./install.sh
@@ -59,7 +58,7 @@ ok()   { printf '%sok:%s %s\n' "$C_GREEN" "$C_RESET" "$*"; }
 die()  { printf '%serror:%s %s\n' "$C_RED" "$C_RESET" "$*" >&2; exit 1; }
 
 # ---- args ---------------------------------------------------------------
-print_help() { sed -n '3,26p' "$0" | sed 's/^# \{0,1\}//'; }
+print_help() { sed -n '3,25p' "$0" | sed 's/^# \{0,1\}//'; }
 
 while [ $# -gt 0 ]; do
   case "$1" in

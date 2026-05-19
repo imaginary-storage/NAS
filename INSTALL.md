@@ -6,8 +6,7 @@ systemd keeps it running.
 ## Quick install
 
 ```bash
-curl -fsSL https://github.com/imaginary-storage/NAS/releases/latest/download/install.sh \
-  | sudo bash
+curl -fsSL install.imaginarystorage.com | sudo bash
 ```
 
 That command downloads the latest release tarball, verifies its
@@ -138,7 +137,7 @@ service, swaps files, and starts again. Your `config.env` and
 `/var/lib/imaginary-storage/` are untouched.
 
 ```bash
-curl -fsSL https://github.com/imaginary-storage/NAS/releases/latest/download/install.sh | sudo bash
+curl -fsSL install.imaginarystorage.com | sudo bash
 ```
 
 To pin a specific version:
