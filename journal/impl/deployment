@@ -1,0 +1,236 @@
+Deployment — install pipeline, releases, systemd lifecycle
+
+Context
+
+End users need a one-command install: `curl -fsSL install.imaginarystorage.com | sudo bash`. The project ships as a single C binary plus a Vite-built React bundle, runs as root for fork+setuid, and is managed by systemd in production. This entry documents the entire pipeline from `VERSION` file to a working installed service, so future maintenance and the next release cycle don't require relearning any of it.
+
+Branch: `feat/deployment` (merged to main as of 2026-05-19).
+First release: `v0.1.0` (lacks bundled `install.sh` asset — see Gotchas).
+Working release: `v0.1.1` and onward.
+
+---
+
+Versioning
+
+`VERSION` at the repo root holds a single line like `0.1.0`. Both halves of the codebase derive their version from this one file.
+
+Backend
+- `Makefile` reads `VERSION` and `git rev-parse --short HEAD` at build time and passes them as `-DIMAGINARY_VERSION`, `-DIMAGINARY_GIT_SHA`, `-DIMAGINARY_BUILD_AT` into all object files.
+- Only `src/routes/version.c` actually consumes those macros. To stop `bump.sh patch && make` from being a no-op (no `.c` file changed, so make reuses old `.o`), the Makefile has an explicit dependency: `$(BUILD_DIR)/src/routes/version.o: VERSION`.
+- New endpoint: `GET /version` (public, unauthenticated) → `{ "version", "commit", "built_at" }`.
+- Liveness probe: `GET /healthz` (public) → `200 OK ok` plain text.
+
+Frontend
+- `frontend/vite.config.ts` reads `../VERSION` synchronously and exposes it via `define: { __APP_VERSION__: JSON.stringify(version) }`.
+- `frontend/src/vite-env.d.ts` declares `declare const __APP_VERSION__: string;`.
+- Version shown in sidebar footer as muted `v0.1.0` text.
+- `frontend/src/lib/versionCheck.ts` — boot-time hook that fetches `/version` once, compares to `__APP_VERSION__`, and toasts a Reload-action prompt if they disagree. Hook gated by a module-level `alreadyChecked` flag so React StrictMode's double-mount doesn't fire two toasts.
+
+Bumping
+- `scripts/bump.sh major|minor|patch|set <X.Y.Z>|--print` — edits `VERSION` atomically. Never commits/tags. Validates the result.
+- Release flow: `scripts/bump.sh patch && git commit -am "chore: release v$(cat VERSION)" && scripts/release.sh`.
+
+---
+
+Releases
+
+`scripts/release.sh`
+- Guards: clean tree, current branch == `main` (override: `--allow-branch`), tag not already present locally or on `origin`.
+- Tags annotated as `v$(cat VERSION)`, pushes to `origin`.
+- Confirms before tagging unless `--yes`.
+- Prints CI + Releases URLs derived from `git remote.origin.url`.
+- Gotcha that bit us: `git log --pretty | head -20` fails under `set -o pipefail` because `head` closes its stdin (SIGPIPE) after 20 lines. Fixed by using `git log -n 20` directly. Lesson: avoid `| head` in pipefail scripts.
+
+`.github/workflows/release.yml`
+- Triggered by `push: tags: ['v*']`.
+- Jobs (in order): `verify` → `build-server` (matrix: x86_64, aarch64) + `build-frontend` (parallel) → `package` (matrix: x86_64, aarch64) → `release`.
+- `verify` reads `VERSION` and aborts if `v$(cat VERSION) != $GITHUB_REF_NAME` — catches "I tagged but forgot to bump VERSION".
+- Runners: `ubuntu-22.04` and `ubuntu-22.04-arm`. Deliberately not `ubuntu-latest`: 22.04 gives glibc 2.35, which lets binaries run on Debian 12, Ubuntu 22.04+, Arch, Fedora 37+.
+- Builds with `make VERSION=… GIT_SHA=…` (explicit pass for CI clarity, the Makefile would pick them up either way).
+- `strip dist/server` — drops ~30% off the binary, no runtime impact.
+- Vite outputs to `../www`, so the workflow uploads `path: www` (the original draft pointed at the non-existent `frontend/dist/`).
+- Each `package` job assembles `imaginary-storage-v<ver>/{bin,web,etc,VERSION,README.md,install.sh,uninstall.sh}` and produces `imaginary-storage-v<ver>-linux-<arch>.tar.gz` + `.sha256`.
+- `release` job: combines per-arch sha files into `imaginary-storage-v<ver>-SHA256SUMS`, attaches tarballs + sums + `install.sh` + `uninstall.sh` to the GitHub Release, sets `generate_release_notes: true`.
+
+Release-asset gotcha
+- v0.1.0 was published without `install.sh`/`uninstall.sh` as standalone release assets — they were inside the tarball but the docs advertised `curl …/releases/latest/download/install.sh`, which 404'd. Fixed in v0.1.1 by adding them to the `files:` list of `softprops/action-gh-release@v2` and adding `actions/checkout@v4` to the release job (the action needs the files on disk).
+
+---
+
+Install / uninstall scripts
+
+`install.sh`
+- One script, two invocation modes:
+  - **Remote**: `curl -fsSL install.imaginarystorage.com | sudo bash` (or the legacy long URL).
+  - **Local**: extract a tarball, `sudo ./install.sh`. Detected by `[ -f VERSION ] && [ -x bin/server ]` in `$(dirname "$0")`.
+- Flags: `--version vX.Y.Z`, `--prefix /path`, `--port N`, `--no-start`, `--yes`/`-y`, `--help`.
+- Preflight: requires root; arch detect (`x86_64`/`aarch64`); checks `libpam`/`libacl` via `ldconfig -p`; requires `tar curl sha256sum systemctl`.
+- Resolves version: `--version` override or `curl …/releases/latest` and grep `tag_name` from the API JSON.
+- Downloads tarball + `imaginary-storage-v<ver>-SHA256SUMS` to a `mktemp -d`, verifies with `sha256sum -c`, extracts.
+- Upgrade detection: reads `/opt/imaginary-storage/VERSION` if present. Same version → confirm reinstall. Different → upgrade path. Stops the service before swapping files.
+- Installs files:
+  - `/opt/imaginary-storage/{bin,web,etc,VERSION,README.md}` — wholesale replace (rm -rf web then copy) so removed assets don't linger.
+- First-install only: writes `/etc/imaginary-storage/config.env` with `IMAGINARY_PORT`, `IMAGINARY_WEB_ROOT`, `IMAGINARY_DATA_DIR`, plus commented TLS placeholders. Upgrades never touch this file.
+- Creates `/var/lib/imaginary-storage/sessions/` (mode 0700, root-owned).
+- Installs systemd unit at `/etc/systemd/system/imaginary-storage.service`, `daemon-reload`, `enable --now` (skip with `--no-start`).
+- Prints URL + status hint on success.
+- Help block is rendered by `sed -n '3,25p' "$0" | sed 's/^# \{0,1\}//'`. The line range is brittle — if the file's top comment grows or shrinks, update the range or `--help` will print junk. (Already fixed twice during this work.)
+
+`uninstall.sh`
+- `--purge` removes `/etc/imaginary-storage` + `/var/lib/imaginary-storage`. Default leaves them alone.
+- **Never** touches `~/.imaginary/` in any user's home — that's user-owned data (bookmarks, settings, trash, upload temp).
+- Idempotent: stop+disable wrapped in `|| true` so a half-installed state still cleans up.
+
+---
+
+Server changes for service-mode
+
+Most of the wiring lives in `src/main.c`. Three runtime knobs are read from env at startup:
+
+| Env var               | Default (dev) | Service value                                |
+|-----------------------|---------------|----------------------------------------------|
+| `IMAGINARY_PORT`      | `8080`        | from `config.env` (default still 8080)       |
+| `IMAGINARY_DATA_DIR`  | `.`           | `/var/lib/imaginary-storage`                 |
+| `IMAGINARY_WEB_ROOT`  | `www`         | `/opt/imaginary-storage/web`                 |
+
+`g_session_dir` (was a `#define SESSION_DIR "./sessions"` in `auth/auth.h`) is now an `extern const char *` set at startup from `${IMAGINARY_DATA_DIR}/sessions`. Same pattern for `g_web_root` replacing `#define STATIC_ROOT "www"` in `routes/static.c`.
+
+Graceful shutdown
+- `volatile sig_atomic_t g_shutting_down = 0` defined in `main.c`, declared `extern` from `lib/chttp.c`.
+- `on_term(SIGTERM)` and `on_term(SIGINT)` set the flag and call `shutdown(g_server_fd, SHUT_RDWR)` to wake the blocking `accept()`.
+- `chttp_server_run()` checks `g_shutting_down` after each `accept()` and breaks. Errors from `accept()`: `EINTR` is `continue`, anything else with the flag set is a clean break.
+- `SIGPIPE` is `SIG_IGN` so a client hangup mid-write doesn't kill the server.
+
+systemd unit (`etc/imaginary-storage.service`)
+- `User=root`, `Type=simple`, `EnvironmentFile=-/etc/imaginary-storage/config.env`, `ExecStart=/opt/imaginary-storage/bin/server`.
+- `Restart=on-failure`, `RestartSec=2s`, `TimeoutStopSec=30s`.
+- `After=network-online.target` + `Wants=network-online.target`.
+- Hardening compatible with the fork+setuid model: `ProtectSystem=full`, `ProtectKernelTunables=yes`, `ProtectKernelModules=yes`, `ProtectControlGroups=yes`. Notes:
+  - `NoNewPrivileges` is OFF (breaks setuid).
+  - `ProtectHome` is OFF (we read user homes).
+  - `PrivateUsers` is OFF (breaks setuid).
+- Installer overwrites this unit on every upgrade. Local overrides go in `/etc/systemd/system/imaginary-storage.service.d/override.conf` via `systemctl edit imaginary-storage` (e.g., `RequiresMountsFor=/mnt/nas` to wait for an external disk).
+
+---
+
+install.imaginarystorage.com — Cloudflare Worker
+
+`workers/install/` contains a small Worker that proxies the latest `install.sh` so the curl command stays short.
+
+- `src/index.js`: on `/` or `/install.sh`, fetch `https://github.com/imaginary-storage/NAS/releases/latest/download/install.sh` and stream its body back with `Content-Type: text/x-shellscript` and a 5-minute edge cache. Browser visits to `/` (detected by `Accept: text/html`) get an HTML landing page with the install command instead.
+- `wrangler.toml`: binds the Worker to `install.imaginarystorage.com/*` on the `imaginarystorage.com` zone. Cloudflare provisions the proxied DNS record automatically.
+- Deploy: `cd workers/install && wrangler deploy` (requires `wrangler login` against the account owning the zone).
+- We chose proxy-not-redirect deliberately: a 302 from the Worker would force users to remember `curl -L`. Streaming the body means bare `curl install.imaginarystorage.com | bash` works.
+- The Worker has no secrets, no state. Cloudflare free tier covers this trivially (GitHub Releases serves the actual bytes; Worker just relays headers).
+
+If Cloudflare ever goes away
+- Fallback URL is `https://github.com/imaginary-storage/NAS/releases/latest/download/install.sh`. It's a real asset on every release ≥ v0.1.1.
+
+---
+
+Landing page (`landing/`)
+
+Originally a long marketing page with hero + stats + features + architecture + use-cases + quickstart + CTA. Stripped to: header + hero (h1, subhead, copyable install command, tech-info line) + footer. ~120 lines of TSX vs the original 590.
+
+- `INSTALL_CMD` = `'curl -fsSL install.imaginarystorage.com | sudo bash'`.
+- `CopyableCommand` uses `navigator.clipboard.writeText`; falls back silently (text is `select-all` so manual copy works).
+- Box is `inline-flex` (centered by the parent's `text-center`) so it hugs the command width instead of stretching to `max-w-3xl`.
+- Deploys to `nas.imaginarystorage.com` via the existing GitHub Pages workflow (`.github/workflows/landing.yml` — not modified by this work; it picks up `landing/dist/` automatically on push to `main`).
+
+---
+
+Repo state, post-merge
+
+```
+.
+├── VERSION                                   # 0.1.1 currently
+├── Makefile                                  # version macros + version.o dep
+├── install.sh                                # idempotent installer
+├── uninstall.sh                              # --purge for full removal
+├── INSTALL.md                                # end-user install doc
+├── etc/
+│   ├── imaginary-storage.service             # systemd unit template
+│   └── RELEASE_README.md                     # bundled as README.md in tarball
+├── scripts/
+│   ├── bump.sh                               # VERSION editor
+│   └── release.sh                            # tag + push
+├── workers/install/                          # CF Worker
+│   ├── src/index.js
+│   ├── wrangler.toml
+│   └── README.md
+├── .github/workflows/release.yml             # tag-triggered release pipeline
+├── src/
+│   ├── main.c                                # env reads, signals, /healthz reg
+│   ├── routes/version.{c,h}                  # /version + /healthz handlers
+│   ├── auth/auth.h                           # g_session_dir extern (was define)
+│   ├── auth/session.c                        # uses g_session_dir
+│   └── routes/static.c                       # uses g_web_root (was define)
+├── lib/chttp.c                               # shutdown-aware accept loop
+└── frontend/
+    ├── vite.config.ts                        # __APP_VERSION__ define
+    └── src/
+        ├── vite-env.d.ts                     # declares __APP_VERSION__
+        ├── lib/versionCheck.ts               # boot-time /version check
+        └── components/layout/Sidebar.tsx     # footer banner
+```
+
+---
+
+Operational notes
+
+After bumping `VERSION` locally
+- `make` will recompile `src/routes/version.c` (and only that) thanks to the explicit Makefile dependency. Restart `./run server` or whatever's running.
+- If the SPA is also rebuilt against the new `VERSION`, the boot-time mismatch toast disappears.
+
+The mismatch toast
+- It compares `data.version` from `/version` (whatever the running binary baked in) with `__APP_VERSION__` (what the SPA was bundled with). If they disagree, it usually means one half was rebuilt and the other wasn't. Most common cause during dev: forgot to restart the server after a bump.
+
+`./run server`
+- Builds the binary (`make`), builds the frontend (`cd frontend && npm run build`), then `sudo ./dist/server`. The frontend build emits to `www/` (Vite's `outDir: '../www'`). The server defaults `IMAGINARY_WEB_ROOT=www`, so the dev workflow works without any env setup.
+
+Cutting a new release
+1. `scripts/bump.sh patch` (or `minor`/`major`/`set X.Y.Z`).
+2. `git commit -am "chore: release v$(cat VERSION)"`.
+3. `git push origin main` if not yet pushed.
+4. `scripts/release.sh` (or `--allow-branch --yes` if tagging off a non-main branch).
+5. Watch CI: `gh run watch <id>` or visit Actions. Build is ~2 minutes.
+6. `curl -fsSL install.imaginarystorage.com | sudo bash` against a Linux VM to smoke-test (only do this once the Worker is deployed; pre-Worker it was the long GitHub URL).
+
+What to do if a release goes wrong
+- The tag is on the commit, the build is reproducible from the tag. Easiest fix is to bump VERSION and cut a `v0.1.N+1`. Don't try to re-publish over the same tag — softprops/action-gh-release will refuse, and even if it didn't, mirrors/caches would diverge.
+- To delete a bad release entirely: `gh release delete vX.Y.Z --yes && git push origin :refs/tags/vX.Y.Z && git tag -d vX.Y.Z`.
+
+---
+
+Gotchas accumulated during the work
+
+- **Repo rename**: the upstream repo was renamed from `Jhaempyre/imaginary-storage-nas` to `imaginary-storage/NAS` mid-implementation. GitHub redirects, but installer URLs are updated to the canonical name. Local `git remote get-url origin` still shows the pre-rename URL — push works through the redirect, just noisy in output. `git remote set-url origin git@github.com:imaginary-storage/NAS.git` quiets it but isn't required.
+- **Vite outputDir**: Vite is configured with `outDir: '../www'`, NOT the default `frontend/dist/`. The first draft of `release.yml` zipped the wrong path.
+- **HEAD vs GET through release-asset redirects**: `curl -sI -L …/install.sh` reported 404 in our smoke test even though `curl -sL …/install.sh -o file` succeeded. The Azure blob redirect that GitHub uses for release downloads handles HEAD oddly. Always smoke-test with GET, not HEAD.
+- **`set -o pipefail` + `| head`**: `head` closing stdin after N lines triggers SIGPIPE, which fails the whole pipeline. Use the producer's own `-n` flag (`git log -n 20`, `tail -n 20`, `find … -print | sort | uniq -c | sort -rn | sed -n 1,20p`, etc.).
+- **Standalone release asset for install.sh**: the docs advertised `curl …/releases/latest/download/install.sh` from day one, but the workflow's first draft only attached tarballs. `install.sh` is inside the tarball, but `/releases/latest/download/install.sh` looks for a top-level asset of that exact name. Added to `softprops/action-gh-release` `files:` list explicitly.
+- **Old running server confounds the version toast**: the user had a v0.1.0 binary running while the rebuilt SPA was 0.1.1; the toast fired correctly but was confusing. Reading `ps aux | grep dist/server` is the fastest diagnostic.
+- **Makefile recompile-on-VERSION-change**: `-DIMAGINARY_VERSION=…` on the gcc command line doesn't make `.o` files depend on `VERSION` automatically (gcc doesn't know that `VERSION`'s contents fed into `-D`). Explicit dependency line is required: `$(BUILD_DIR)/src/routes/version.o: VERSION`.
+
+---
+
+Things explicitly NOT done
+
+- **No live smoke-test on a VM**: the installer hasn't been run end-to-end on a fresh Linux box. CI builds the bundle and the bundle exists, but the install path (`curl … | bash` → `wrangler` worker → GitHub Release → tarball → systemd start) hasn't been exercised in one go.
+- **No staticly linked or musl-built variant**: glibc 2.35 is the floor. Alpine and other musl distros aren't supported.
+- **No package-manager packaging**: no `.deb`, `.rpm`, AUR, Homebrew, etc. Just the tarball + script.
+- **No update-notification path**: the binary doesn't check for new releases on its own. The frontend's boot-time mismatch toast is the closest thing.
+- **No first-run admin bootstrap**: install.sh doesn't create an `imaginary` user or prompt for a password. Auth is entirely PAM against existing OS accounts.
+- **No firewall manipulation**: install.sh prints a hint but does not open ports.
+- **Worker not auto-deployed**: `wrangler deploy` is a manual step. Could be wired into a GitHub Action with `cloudflare/wrangler-action`, but that requires storing a `CLOUDFLARE_API_TOKEN` secret in the repo. Deferred until the Worker code starts changing often.
+
+---
+
+Next-up backlog (anything we touched that wants follow-up)
+
+- **`actions/checkout@v4` deprecation notice** in CI runs. Non-blocking, but `@v5` exists. Same for `setup-node@v4` and `upload-artifact@v4`.
+- **`wrangler deploy` Action** for one-click Worker updates from CI.
+- **End-to-end install smoke-test job** in the release workflow: spin up a clean Ubuntu/Debian container, run install.sh, curl `/healthz` on the container, tear down. Catches the kind of issue v0.1.0 had.
+- **Release notes content**: currently auto-generated from PR titles, which is OK for now but loses non-PR commits. Could add `git-cliff` or similar with conventional-commit grouping if release notes start mattering more.
+- **Sanitize the `git remote set-url`** — push output spam from the rename redirect is harmless but easy to fix.
+- **`install.sh` on Pages` directly**: alternative to the Worker. If the Worker ever becomes a problem, GitHub Pages could host install.sh under a separate Pages site keyed to `install.imaginarystorage.com`. Worker is cleaner because it can proxy `releases/latest` instead of being rebuilt on every release.
