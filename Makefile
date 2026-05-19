@@ -32,6 +32,11 @@ $(BUILD_DIR)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
 
+# Files that bake version macros into their object code must be rebuilt
+# whenever VERSION changes — otherwise `bump.sh patch && make` is a no-op
+# and the running binary still reports the old version.
+$(BUILD_DIR)/src/routes/version.o: VERSION
+
 $(OUT_DIR):
 	mkdir -p $@
 
