@@ -118,8 +118,8 @@ function CopyableCommand({ command }: { command: string }) {
   }
 
   return (
-    <div className="mt-8 flex items-stretch gap-2 rounded-xl border border-white/10 bg-black/50 p-2 text-left shadow-[0_20px_60px_-20px_rgba(0,0,0,0.6)]">
-      <pre className="flex-1 overflow-x-auto px-3 py-3 text-[13px] leading-relaxed text-emerald-300 select-all">
+    <div className="mt-8 inline-flex max-w-full items-center gap-2 rounded-xl border border-white/10 bg-black/50 py-1.5 pl-3 pr-1.5 text-left shadow-[0_20px_60px_-20px_rgba(0,0,0,0.6)]">
+      <pre className="overflow-x-auto py-1.5 text-[13px] leading-relaxed text-emerald-300 select-all">
         <code>
           <span className="text-white/40 select-none mr-2">$</span>
           {command}
@@ -129,7 +129,7 @@ function CopyableCommand({ command }: { command: string }) {
         type="button"
         onClick={onCopy}
         aria-label={copied ? 'Copied' : 'Copy to clipboard'}
-        className={`shrink-0 inline-flex items-center gap-1.5 self-center rounded-lg border px-3 py-2 text-xs font-medium transition-all ${
+        className={`shrink-0 inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-all ${
           copied
             ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-300'
             : 'border-white/10 bg-white/[0.04] text-white/80 hover:border-white/25 hover:bg-white/[0.08]'
