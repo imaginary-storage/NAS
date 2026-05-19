@@ -103,8 +103,8 @@ fi
 
 check_lib() { ldconfig -p 2>/dev/null | grep -q "$1"; }
 need_libs=()
-check_lib libpam.so.0 || need_libs+=("libpam")
-check_lib libacl.so.1 || need_libs+=("libacl")
+check_lib libpam.so || need_libs+=("libpam")
+check_lib libacl.so || need_libs+=("libacl")
 if [ "${#need_libs[@]}" -gt 0 ]; then
   warn "missing runtime libraries: ${need_libs[*]}"
   if [ -n "$PKG_INSTALL_HINT" ]; then
